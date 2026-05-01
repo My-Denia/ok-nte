@@ -13,6 +13,10 @@ class DailyTask(BaseNTETask):
     """日常任务执行器"""
 
     DEFAULT_MOVE = True
+    TASK_SKIPPED = object()
+    ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
+    MAX_ACTIVITY_MISSION_CLAIMS = 5
+    DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,6 +92,13 @@ class DailyTask(BaseNTETask):
             self.task_status["failed"].append(key)
             self.screenshot(f"fail_{key}")
             self.log_info(f"任务失败: {key}")
+            self.current_task_key = None
+            return
+
+        if result is self.TASK_SKIPPED:
+            self.task_status["skipped"].append(key)
+            self.log_info(f"任务跳过: {key}")
+            self.current_task_key = None
             return
 
         self.task_status["success"].append(key)
@@ -149,21 +160,61 @@ class DailyTask(BaseNTETask):
         self.sleep(1)
         return True
 
+    def _open_activity_panel(self):
+        """打开 F1 每日活跃度面板。"""
+        self.openF1panel()
+        self.click(*self.ACTIVITY_TAB_POSITION)
+        if not self.wait_panel(Labels.f1_activity_panel):
+            self.log_error("无法找到每日活跃度面板", notify=True)
+            return False
+        return True
+
     def complete_daily_activities(self):
         """执行操作完成每日活跃度"""
-        # TODO: 待实现具体逻辑
-        self.log_info("正在执行每日活跃度任务 (TODO)")
-        return True
+        self.log_info("正在处理每日活跃度任务")
+        if not self._open_activity_panel():
+            return False
+
+        claimed = self._claim_visible_activity_missions()
+        if claimed:
+            self.log_info(f"已领取 {claimed} 个已完成的每日活跃度任务")
+            return True
+
+        self.info_set("每日活跃度缺失特征", self.DAILY_ACTIVITY_MISSING_FEATURES)
+        self.log_info(
+            "未检测到可领取的每日活跃度任务；"
+            f"自动完成具体任务仍缺少特征: {self.DAILY_ACTIVITY_MISSING_FEATURES}"
+        )
+        return self.TASK_SKIPPED
+
+    def _claim_visible_activity_missions(self, max_clicks=None):
+        """领取当前活跃页中已完成、可见的每日任务奖励。"""
+        max_clicks = max_clicks or self.MAX_ACTIVITY_MISSION_CLAIMS
+        claimed = 0
+
+        for _ in range(max_clicks):
+            target = self.find_one(Labels.f1_activity_mission)
+            if not target:
+                break
+
+            self.click(target)
+            claimed += 1
+            self.sleep(1)
+
+        if claimed == max_clicks and self.find_one(Labels.f1_activity_mission):
+            self.log_warning("每日活跃度任务领取达到上限，可能仍有可领取项目")
+
+        return claimed
 
     def claim_activity_rewards(self):
         """领取活跃度奖励"""
         self.log_info("正在领取活跃度奖励")
-        self.openF1panel()
-        self.click(0.0551, 0.3833)
-        self.wait_panel(Labels.f1_activity_panel)
-        if self.find_one(Labels.f1_activity_mission):
-            self.click(0.2348, 0.7653)
-            self.sleep(2)
+        if not self._open_activity_panel():
+            return False
+
+        claimed = self._claim_visible_activity_missions()
+        if claimed:
+            self.log_info(f"领取活跃度奖励前已先领取 {claimed} 个每日任务奖励")
 
         if target := self._get_activity_reward_box():
             self.click(target)
@@ -193,7 +244,9 @@ class DailyTask(BaseNTETask):
         self.click(0.6934, 0.8229)
         self.sleep(1)
         self.click(0.0570, 0.3451)
-        self.wait_panel(Labels.f2_mission_panel)
+        if not self.wait_panel(Labels.f2_mission_panel):
+            self.log_error("无法找到环期任务面板")
+            return False
         self.click(0.8777, 0.8187)
         self.sleep(1)
         return True
