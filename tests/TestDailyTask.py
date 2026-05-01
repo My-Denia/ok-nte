@@ -1,7 +1,11 @@
 import unittest
-from unittest.mock import Mock, call
+from unittest.mock import Mock, PropertyMock, call, patch
 
+import numpy as np
+
+from src.Labels import Labels
 from src.tasks.DailyActivityAnalyzer import DailyActivityAnalysis, DailyActivityState
+from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.DailyTask import DailyTask
 from src.tasks.F1PanelDetector import DailyPanelOpenResult
 
@@ -260,6 +264,206 @@ class TestDailyTask(unittest.TestCase):
         self.assertIs(result, DailyTask.TASK_SKIPPED)
         self.assertEqual(task.task_skip_reasons["完成每日活跃度"], reason)
         task._analyze_daily_activity.assert_not_called()
+
+    def test_open_esc_panel_does_not_wait_for_settle(self):
+        task = object.__new__(DailyTask)
+        task.reset_to_false = Mock()
+        task.in_team_and_world = Mock(return_value=True)
+        task.send_key = Mock()
+        task.log_info = Mock()
+        task._wait_esc_panel = Mock(return_value=object())
+        task._send_foreground_key = Mock()
+
+        DailyTask.openESCpanel(task)
+
+        task._wait_esc_panel.assert_called_once()
+        task._send_foreground_key.assert_not_called()
+
+    def test_open_esc_panel_uses_foreground_key_fallback(self):
+        task = object.__new__(DailyTask)
+        task.reset_to_false = Mock()
+        task.in_team_and_world = Mock(return_value=True)
+        task.send_key = Mock()
+        task.log_info = Mock()
+        panel = object()
+        task._wait_esc_panel = Mock(side_effect=[None, panel])
+        task._send_foreground_key = Mock(return_value=True)
+
+        result = DailyTask.openESCpanel(task)
+
+        self.assertIs(result, panel)
+        task._send_foreground_key.assert_called_once_with("esc", after_sleep=1)
+        self.assertEqual(task._wait_esc_panel.call_count, 2)
+
+    def test_open_mail_panel_clicks_verified_mail_button_center(self):
+        task = object.__new__(DailyTask)
+        task.log_info = Mock()
+        task.openESCpanel = Mock()
+        task.click_ui = Mock()
+        task.wait_panel = Mock(return_value=object())
+
+        result = DailyTask._open_mail_panel(task)
+
+        self.assertTrue(result)
+        task.openESCpanel.assert_called_once()
+        task.click_ui.assert_called_once_with(*DailyTask.MAIL_BUTTON_POSITION, after_sleep=1)
+        task.wait_panel.assert_called_once_with(Labels.mail_panel)
+
+    def test_claim_battle_pass_uses_named_positions_and_structure_wait(self):
+        task = object.__new__(DailyTask)
+        task.log_info = Mock()
+        task.openF2panel = Mock()
+        task.click_ui = Mock()
+        task.sleep = Mock()
+        task._wait_battle_pass_mission_panel = Mock(return_value=object())
+
+        result = DailyTask.claim_battle_pass_rewards(task)
+
+        self.assertTrue(result)
+        task.openF2panel.assert_called_once()
+        task.click_ui.assert_has_calls(
+            [
+                call(*DailyTask.BATTLE_PASS_REWARD_POSITION),
+                call(*DailyTask.BATTLE_PASS_MISSION_TAB_POSITION),
+                call(*DailyTask.BATTLE_PASS_CLAIM_POSITION),
+            ]
+        )
+        task._wait_battle_pass_mission_panel.assert_called_once()
+
+    def test_find_battle_pass_mission_panel_prefers_existing_template(self):
+        task = object.__new__(DailyTask)
+        panel = object()
+        task.find_one = Mock(return_value=panel)
+        task._find_battle_pass_mission_panel_structure = Mock()
+
+        result = DailyTask._find_battle_pass_mission_panel(task)
+
+        self.assertIs(result, panel)
+        task.find_one.assert_called_once_with(Labels.f2_mission_panel)
+        task._find_battle_pass_mission_panel_structure.assert_not_called()
+
+    def test_find_battle_pass_mission_panel_detects_selected_task_card(self):
+        task = object.__new__(DailyTask)
+        frame = np.full((1600, 2560, 3), 40, dtype=np.uint8)
+        frame[432:624, 435:870] = (255, 0, 255)
+        task.box_of_ui = Mock(return_value="mission_panel")
+
+        with patch.object(DailyTask, "frame", new_callable=PropertyMock, return_value=frame):
+            result = DailyTask._find_battle_pass_mission_panel_structure(task)
+
+        self.assertEqual(result, "mission_panel")
+        task.box_of_ui.assert_called_once()
+
+    def test_find_battle_pass_mission_panel_rejects_unselected_page(self):
+        task = object.__new__(DailyTask)
+        frame = np.full((1600, 2560, 3), 40, dtype=np.uint8)
+
+        with patch.object(DailyTask, "frame", new_callable=PropertyMock, return_value=frame):
+            result = DailyTask._find_battle_pass_mission_panel_structure(task)
+
+        self.assertIsNone(result)
+
+    def test_wait_esc_panel_uses_stricter_threshold(self):
+        task = object.__new__(BaseNTETask)
+        task._find_esc_panel = Mock(return_value="panel")
+        task.wait_until = Mock(return_value="panel")
+
+        result = BaseNTETask._wait_esc_panel(task)
+
+        self.assertEqual(result, "panel")
+        condition = task.wait_until.call_args.args[0]
+        self.assertEqual(condition(), "panel")
+        self.assertEqual(task.wait_until.call_args.kwargs["settle_time"], 0)
+
+    def test_find_esc_panel_prefers_existing_template(self):
+        task = object.__new__(BaseNTETask)
+        panel = object()
+        task.find_one = Mock(return_value=panel)
+        task._find_esc_phone_menu = Mock()
+
+        result = BaseNTETask._find_esc_panel(task)
+
+        self.assertIs(result, panel)
+        task.find_one.assert_called_once_with(
+            Labels.esc_option,
+            box=Labels.box_all_esc_options,
+            threshold=BaseNTETask.ESC_PANEL_THRESHOLD,
+        )
+        task._find_esc_phone_menu.assert_not_called()
+
+    def test_find_esc_phone_menu_detects_dark_phone_panel(self):
+        task = object.__new__(BaseNTETask)
+        frame = np.full((1600, 2560, 3), 220, dtype=np.uint8)
+        frame[192:1488, 1792:2508] = 60
+        frame[1264:1488, 1792:2508] = 50
+
+        with patch.object(BaseNTETask, "frame", new_callable=PropertyMock, return_value=frame):
+            result = BaseNTETask._find_esc_phone_menu(task)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name, "esc_phone_menu")
+
+    def test_find_esc_phone_menu_rejects_world_frame(self):
+        task = object.__new__(BaseNTETask)
+        frame = np.full((1600, 2560, 3), 220, dtype=np.uint8)
+
+        with patch.object(BaseNTETask, "frame", new_callable=PropertyMock, return_value=frame):
+            result = BaseNTETask._find_esc_phone_menu(task)
+
+        self.assertIsNone(result)
+
+    def test_send_foreground_key_attempts_direct_input_without_foreground_confirmation(self):
+        task = object.__new__(BaseNTETask)
+        hwnd_window = Mock()
+        hwnd_window.is_foreground.return_value = False
+        task.bring_to_front = Mock()
+        task._send_pydirect_key = Mock(return_value=True)
+        task._send_pynput_key = Mock()
+        task.sleep = Mock()
+        task.log_info = Mock()
+
+        with (
+            patch.object(BaseNTETask, "hwnd", new_callable=PropertyMock, return_value=hwnd_window),
+            patch("src.tasks.BaseNTETask.time.sleep"),
+        ):
+            result = BaseNTETask._send_foreground_key(task, "esc", after_sleep=1)
+
+        self.assertTrue(result)
+        task._send_pydirect_key.assert_called_once_with("esc", 0.05)
+        task._send_pynput_key.assert_not_called()
+        task.sleep.assert_called_once_with(1)
+
+    def test_bring_to_front_unwraps_hwnd_window_handle(self):
+        task = object.__new__(BaseNTETask)
+        hwnd_window = Mock(hwnd=12345)
+        task._executor = Mock(device_manager=Mock(hwnd_window=hwnd_window))
+
+        with (
+            patch("src.tasks.BaseNTETask.win32api.GetCurrentThreadId", return_value=1),
+            patch(
+                "src.tasks.BaseNTETask.win32process.GetWindowThreadProcessId",
+                return_value=(1, 999),
+            ) as get_thread,
+            patch("src.tasks.BaseNTETask.win32gui.GetForegroundWindow", return_value=0),
+            patch("src.tasks.BaseNTETask.win32gui.IsIconic", return_value=False),
+            patch("src.tasks.BaseNTETask.win32gui.BringWindowToTop") as bring_top,
+            patch("src.tasks.BaseNTETask.win32gui.SetForegroundWindow") as set_foreground,
+        ):
+            BaseNTETask.bring_to_front(task)
+
+        get_thread.assert_called_once_with(12345)
+        bring_top.assert_called_once_with(12345)
+        set_foreground.assert_called_once_with(12345)
+
+    def test_wait_panel_uses_custom_settle_time(self):
+        task = object.__new__(BaseNTETask)
+        task.find_one = Mock(return_value="panel")
+        task.wait_until = Mock(return_value="panel")
+
+        result = BaseNTETask.wait_panel(task, Labels.esc_option, settle_time=0)
+
+        self.assertEqual(result, "panel")
+        self.assertEqual(task.wait_until.call_args.kwargs["settle_time"], 0)
 
 
 if __name__ == "__main__":

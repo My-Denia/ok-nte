@@ -31,6 +31,7 @@ logger = Logger.get_logger(__name__)
 
 class BaseNTETask(BaseTask):
     DEFAULT_MOVE = False
+    ESC_PANEL_THRESHOLD = 0.45
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -458,7 +459,11 @@ class BaseNTETask(BaseTask):
         if not self.hwnd:
             return
 
-        hwnd = self.hwnd
+        hwnd_window = self.hwnd
+        hwnd = getattr(hwnd_window, "hwnd", hwnd_window)
+        if not hwnd:
+            return
+
         current_thread_id = 0
         target_thread_id = 0
         foreground_thread_id = 0
@@ -574,11 +579,11 @@ class BaseNTETask(BaseTask):
             raise Exception("can't find panel, make sure f2 is the hotkey for panel")
         return result
 
-    def wait_panel(self, feature, box=None, threshold=0.8, time_out=4.5):
+    def wait_panel(self, feature, box=None, threshold=0.8, time_out=4.5, settle_time=0.5):
         result = self.wait_until(
             lambda: self.find_one(feature, box=box, threshold=threshold),
             time_out=time_out,
-            settle_time=0.5,
+            settle_time=settle_time,
         )
         logger.info(f"found {feature} {result}")
         return result
@@ -590,11 +595,154 @@ class BaseNTETask(BaseTask):
             self.send_key("esc", after_sleep=1)
             self.log_info("send esc key to open the panel")
 
-        result = self.wait_panel(Labels.esc_option, box=Labels.box_all_esc_options, threshold=0.3)
+        result = self._wait_esc_panel()
+        if not result:
+            self.log_info("未检测到 ESC 面板，尝试前台发送 ESC 键")
+            if self._send_foreground_key("esc", after_sleep=1):
+                result = self._wait_esc_panel()
         if not result:
             self.log_error("can't find panel, make sure esc is the hotkey for panel", notify=True)
             raise Exception("can't find panel, make sure esc is the hotkey for panel")
         return result
+
+    def _wait_esc_panel(self):
+        result = self.wait_until(
+            self._find_esc_panel,
+            time_out=4.5,
+            settle_time=0,
+        )
+        logger.info(f"found esc panel {result}")
+        return result
+
+    def _find_esc_panel(self):
+        result = self.find_one(
+            Labels.esc_option,
+            box=Labels.box_all_esc_options,
+            threshold=self.ESC_PANEL_THRESHOLD,
+        )
+        if result:
+            return result
+        return self._find_esc_phone_menu()
+
+    def _find_esc_phone_menu(self):
+        try:
+            frame = self.frame
+        except Exception:
+            return None
+
+        shape = getattr(frame, "shape", None)
+        if shape is None or len(shape) < 2:
+            return None
+
+        height, width = shape[:2]
+        if height <= 0 or width <= 0:
+            return None
+
+        panel_x1, panel_y1 = int(width * 0.70), int(height * 0.12)
+        panel_x2, panel_y2 = int(width * 0.98), int(height * 0.93)
+        bar_x1, bar_y1 = int(width * 0.70), int(height * 0.79)
+        bar_x2, bar_y2 = int(width * 0.98), int(height * 0.93)
+
+        panel = frame[panel_y1:panel_y2, panel_x1:panel_x2]
+        bottom_bar = frame[bar_y1:bar_y2, bar_x1:bar_x2]
+        if panel.size == 0 or bottom_bar.size == 0:
+            return None
+
+        panel_dark = self._dark_pixel_ratio(panel, threshold=90)
+        bar_dark = self._dark_pixel_ratio(bottom_bar, threshold=90)
+        if panel_dark < 0.55 or bar_dark < 0.55:
+            return None
+
+        confidence = min(1.0, (panel_dark + bar_dark) / 2)
+        return Box(
+            panel_x1,
+            panel_y1,
+            panel_x2 - panel_x1,
+            panel_y2 - panel_y1,
+            name="esc_phone_menu",
+            confidence=confidence,
+        )
+
+    @staticmethod
+    def _dark_pixel_ratio(frame, threshold=90):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return float(np.mean(gray < threshold))
+
+    @staticmethod
+    def _hsv_pixel_ratio(
+        frame,
+        hue_min,
+        hue_max,
+        saturation_min=80,
+        value_min=120,
+    ):
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask = (
+            (hsv[:, :, 0] >= hue_min)
+            & (hsv[:, :, 0] <= hue_max)
+            & (hsv[:, :, 1] >= saturation_min)
+            & (hsv[:, :, 2] >= value_min)
+        )
+        return float(np.mean(mask))
+
+    def _send_foreground_key(self, key, down_time=0.05, after_sleep=0):
+        try:
+            self.bring_to_front()
+            hwnd_window = self.hwnd
+            if hasattr(hwnd_window, "bring_to_front"):
+                hwnd_window.bring_to_front()
+            foreground = True
+            if hasattr(hwnd_window, "is_foreground"):
+                foreground = False
+                for _ in range(5):
+                    time.sleep(0.1)
+                    if hwnd_window.is_foreground():
+                        foreground = True
+                        break
+                    self.bring_to_front()
+                    if hasattr(hwnd_window, "bring_to_front"):
+                        hwnd_window.bring_to_front()
+                if not foreground:
+                    logger.debug(f"foreground key continuing without foreground confirmation: {key}")
+
+            key_name = str(key).lower()
+            sent = self._send_pydirect_key(key_name, down_time)
+            if not sent:
+                self._send_pynput_key(key_name, down_time)
+            if after_sleep > 0:
+                self.sleep(after_sleep)
+            self.log_info(f"send foreground {key} key to open the panel")
+            return True
+        except Exception as e:
+            logger.debug(f"send foreground key failed: {key} {e}")
+            return False
+
+    @staticmethod
+    def _send_pydirect_key(key, down_time):
+        try:
+            import pydirectinput
+
+            pydirectinput.FAILSAFE = False
+            if hasattr(pydirectinput, "SendInput"):
+                pydirectinput.SendInput.argtypes = [ctypes.c_uint, ctypes.c_void_p, ctypes.c_int]
+            pydirectinput.keyDown(str(key))
+            time.sleep(down_time)
+            pydirectinput.keyUp(str(key))
+            return True
+        except Exception as e:
+            logger.debug(f"pydirect foreground key failed: {key} {e}")
+            return False
+
+    @staticmethod
+    def _send_pynput_key(key, down_time):
+        from pynput import keyboard
+
+        parsed_key = keyboard.Key.esc if key == "esc" else key
+        controller = keyboard.Controller()
+        controller.press(parsed_key)
+        time.sleep(down_time)
+        controller.release(parsed_key)
+        return True
 
     def ensure_main(self, esc=True, time_out=30):
         self.info_set("current task", f"wait main esc={esc}")

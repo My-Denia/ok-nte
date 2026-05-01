@@ -19,6 +19,10 @@ class DailyTask(BaseNTETask):
     DAILY_ACTIVITY_TAB_INDEX = 2
     DAILY_ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
     ACTIVITY_TAB_POSITION = DAILY_ACTIVITY_TAB_POSITION
+    MAIL_BUTTON_POSITION = (0.8707, 0.85)
+    BATTLE_PASS_REWARD_POSITION = (0.6934, 0.8229)
+    BATTLE_PASS_MISSION_TAB_POSITION = (0.0570, 0.3451)
+    BATTLE_PASS_CLAIM_POSITION = (0.8777, 0.8187)
     MAX_ACTIVITY_MISSION_CLAIMS = 5
     DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
     ACTIVITY_REWARD_UNAVAILABLE = "未检测到可领取活跃度奖励"
@@ -179,7 +183,7 @@ class DailyTask(BaseNTETask):
         """
         self.log_info("正在打开邮件面板")
         self.openESCpanel()
-        self.click_ui(0.8707, 0.8736, after_sleep=1)
+        self.click_ui(*self.MAIL_BUTTON_POSITION, after_sleep=1)
         result = self.wait_panel(Labels.mail_panel)
         if not result:
             self.log_error("无法找到邮件面板", notify=True)
@@ -336,12 +340,67 @@ class DailyTask(BaseNTETask):
         """领取环期任务奖励"""
         self.log_info("正在领取环期任务奖励")
         self.openF2panel()
-        self.click_ui(0.6934, 0.8229)
+        self.click_ui(*self.BATTLE_PASS_REWARD_POSITION)
         self.sleep(1)
-        self.click_ui(0.0570, 0.3451)
-        if not self.wait_panel(Labels.f2_mission_panel):
+        self.click_ui(*self.BATTLE_PASS_MISSION_TAB_POSITION)
+        if not self._wait_battle_pass_mission_panel():
             self.log_error("无法找到环期任务面板")
             return False
-        self.click_ui(0.8777, 0.8187)
+        self.click_ui(*self.BATTLE_PASS_CLAIM_POSITION)
         self.sleep(1)
         return True
+
+    def _wait_battle_pass_mission_panel(self):
+        result = self.wait_until(
+            self._find_battle_pass_mission_panel,
+            time_out=4.5,
+            settle_time=0,
+        )
+        if result:
+            self.log_info(f"found battle pass mission panel {result}")
+        return result
+
+    def _find_battle_pass_mission_panel(self):
+        result = self.find_one(Labels.f2_mission_panel)
+        if result:
+            return result
+        return self._find_battle_pass_mission_panel_structure()
+
+    def _find_battle_pass_mission_panel_structure(self):
+        try:
+            frame = self.frame
+        except Exception:
+            return None
+
+        shape = getattr(frame, "shape", None)
+        if shape is None or len(shape) < 2:
+            return None
+
+        height, width = shape[:2]
+        if height <= 0 or width <= 0:
+            return None
+
+        x1, y1 = int(width * 0.17), int(height * 0.27)
+        x2, y2 = int(width * 0.34), int(height * 0.39)
+        selected_card = frame[y1:y2, x1:x2]
+        if selected_card.size == 0:
+            return None
+
+        pink_ratio = self._hsv_pixel_ratio(
+            selected_card,
+            hue_min=140,
+            hue_max=175,
+            saturation_min=80,
+            value_min=120,
+        )
+        if pink_ratio < 0.03:
+            return None
+
+        return self.box_of_ui(
+            0.16,
+            0.25,
+            to_x=0.95,
+            to_y=0.78,
+            name="f2_mission_panel_structure",
+            confidence=min(1.0, pink_ratio * 4),
+        )
