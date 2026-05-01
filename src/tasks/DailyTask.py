@@ -17,6 +17,7 @@ class DailyTask(BaseNTETask):
     ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
     MAX_ACTIVITY_MISSION_CLAIMS = 5
     DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
+    ACTIVITY_REWARD_UNAVAILABLE = "未检测到可领取活跃度奖励"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -220,8 +221,9 @@ class DailyTask(BaseNTETask):
             self.click(target)
             self.sleep(1)
         else:
-            self.log_error("无法找到活跃度奖励领取框")
-            return False
+            self.info_set("活跃度奖励状态", self.ACTIVITY_REWARD_UNAVAILABLE)
+            self.log_info(self.ACTIVITY_REWARD_UNAVAILABLE)
+            return self.TASK_SKIPPED
         return True
 
     def _get_activity_reward_box(self):

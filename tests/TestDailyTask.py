@@ -69,6 +69,23 @@ class TestDailyTask(unittest.TestCase):
         task.click.assert_has_calls([call(first_target), call(second_target)])
         self.assertEqual(task.sleep.call_count, 2)
 
+    def test_claim_activity_rewards_skips_when_no_reward_available(self):
+        task = object.__new__(DailyTask)
+        task._open_activity_panel = Mock(return_value=True)
+        task._claim_visible_activity_missions = Mock(return_value=0)
+        task._get_activity_reward_box = Mock(return_value=None)
+        task.info_set = Mock()
+        task.log_info = Mock()
+
+        result = DailyTask.claim_activity_rewards(task)
+
+        self.assertIs(result, DailyTask.TASK_SKIPPED)
+        task.info_set.assert_called_once_with(
+            "活跃度奖励状态",
+            DailyTask.ACTIVITY_REWARD_UNAVAILABLE,
+        )
+        task.log_info.assert_any_call(DailyTask.ACTIVITY_REWARD_UNAVAILABLE)
+
 
 if __name__ == "__main__":
     unittest.main()
