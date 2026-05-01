@@ -10,6 +10,7 @@ from src.Labels import Labels
 from src.tasks.DailyActivityAnalyzer import DailyActivityAnalyzer
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.DailyTask import DailyTask
+from src.tasks.F1PanelDetector import F1PanelDetector
 
 
 class DailyActivityCaptureTask(BaseNTETask):
@@ -53,8 +54,8 @@ class DailyActivityCaptureTask(BaseNTETask):
     def do_run(self):
         self.log_info("开始采集每日活跃度面板特征")
         self._ensure_capture_main()
-        panel_detected = self._open_activity_panel()
-        self._capture_current_activity_panel(self.frame, panel_detected=panel_detected)
+        open_result = self._open_activity_panel()
+        self._capture_current_activity_panel(self.frame, open_result=open_result)
         self._ensure_capture_main()
         self.log_info("每日活跃度面板截图已保存")
         return True
@@ -75,28 +76,51 @@ class DailyActivityCaptureTask(BaseNTETask):
         raise Exception("Please start in game world and in team!")
 
     def _open_activity_panel(self):
-        self.openF1panel()
+        detector = F1PanelDetector(self)
+        try:
+            self.openF1panel()
+            f1_panel_opened = True
+        except Exception:
+            return detector.make_open_result(False, False, False)
+
         self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
         self.click_ui(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
-        if not self.wait_panel(Labels.f1_activity_panel):
-            self.log_error("无法找到每日活跃度面板", notify=True)
-            return False
-        return True
+        result = detector.make_open_result(f1_panel_opened, True)
+        if not result.daily_activity_panel_detected:
+            self.log_info(result.reason)
+        return result
 
-    def _capture_current_activity_panel(self, frame, panel_detected=True):
+    def _capture_current_activity_panel(self, frame, panel_detected=True, open_result=None):
         capture_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        detector = F1PanelDetector(self)
+        if open_result is None:
+            open_result = detector.make_open_result(
+                bool(panel_detected),
+                bool(panel_detected),
+                bool(panel_detected),
+            )
+        panel_detected = open_result.daily_activity_panel_detected
+        feature_probe = detector.probe_features()
         candidate_boxes = self._candidate_region_boxes()
+        probe_boxes = detector.probe_boxes(feature_probe)
         ocr_boxes = []
         if self.config.get("保存OCR结果", False):
             ocr_boxes = self.ocr(frame=frame, log=True)
 
-        image_paths = self._save_capture_images(capture_id, frame, candidate_boxes, ocr_boxes)
+        image_paths = self._save_capture_images(
+            capture_id,
+            frame,
+            candidate_boxes + probe_boxes,
+            ocr_boxes,
+        )
         analysis = DailyActivityAnalyzer(self).analyze(frame=frame, panel_detected=panel_detected)
         self.screenshot(f"{self.CAPTURE_NAME_PREFIX}/{capture_id}_panel_raw", frame=frame)
 
         if self.config.get("保存候选区域标注", True):
             self.clear_box()
             self.draw_boxes("daily_activity_candidate_regions", candidate_boxes, color="blue")
+            if probe_boxes:
+                self.draw_boxes("daily_activity_feature_probe", probe_boxes, color="red")
             if ocr_boxes:
                 self.draw_boxes("daily_activity_ocr", ocr_boxes, color="green")
             self.screenshot(
@@ -112,10 +136,13 @@ class DailyActivityCaptureTask(BaseNTETask):
             image_paths,
             panel_detected,
             analysis,
+            open_result,
+            feature_probe,
         )
         self.info_set("每日活跃度采集ID", capture_id)
         self.info_set("每日活跃度采集元数据", metadata_path)
         self.info_set("每日活跃度面板特征命中", str(panel_detected))
+        self.info_set("每日活跃度打开状态", open_result.reason)
         return True
 
     def _save_capture_images(self, capture_id, frame, candidate_boxes, ocr_boxes):
@@ -217,13 +244,15 @@ class DailyActivityCaptureTask(BaseNTETask):
         image_paths,
         panel_detected,
         analysis,
+        open_result,
+        feature_probe,
     ):
         folder = os.path.join("logs", self.CAPTURE_NAME_PREFIX)
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, f"{capture_id}.json")
         viewport = self.get_ui_viewport()
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "capture_id": capture_id,
             "timestamp": capture_id,
             "panel_detected": panel_detected,
@@ -249,7 +278,10 @@ class DailyActivityCaptureTask(BaseNTETask):
             "screen": {"width": self.width, "height": self.height},
             "resolution": {"width": self.width, "height": self.height},
             "viewport": viewport.to_dict(),
+            "layout_profile": open_result.layout_profile,
             "ui_coordinate_mode": self.get_ui_coordinate_mode(),
+            "open_result": open_result.to_dict(),
+            "feature_probe": feature_probe,
             "regions": self._regions_to_dict(candidate_boxes),
             "candidate_regions": [self._box_to_dict(box) for box in candidate_boxes],
             "ocr": [self._box_to_dict(box) for box in ocr_boxes],

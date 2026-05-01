@@ -7,6 +7,7 @@ from src import text_white_color
 from src.Labels import Labels
 from src.tasks.DailyActivityAnalyzer import DailyActivityAnalyzer, DailyActivityState
 from src.tasks.BaseNTETask import BaseNTETask
+from src.tasks.F1PanelDetector import DailyPanelOpenResult, F1PanelDetector
 from src.utils import image_utils as iu
 
 
@@ -195,21 +196,49 @@ class DailyTask(BaseNTETask):
 
     def _open_activity_panel(self):
         """打开 F1 每日活跃度面板。"""
-        self.openF1panel()
+        return self._open_activity_panel_result().daily_activity_panel_detected
+
+    def _open_activity_panel_result(self):
+        """打开 F1 每日第二栏目，并区分 F1 面板打开与每日页模板命中。"""
+        detector = F1PanelDetector(self)
+        f1_panel_opened = False
+        daily_tab_clicked = False
+
+        try:
+            self.openF1panel()
+            f1_panel_opened = True
+        except Exception:
+            result = detector.make_open_result(False, False, False)
+            self._record_daily_panel_open_result(result)
+            return result
         self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
         self.click_ui(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
-        if not self.wait_panel(Labels.f1_activity_panel):
-            self.log_error("无法找到每日活跃度面板", notify=True)
-            return False
-        return True
+        daily_tab_clicked = True
+        result = detector.make_open_result(f1_panel_opened, daily_tab_clicked)
+        self._record_daily_panel_open_result(result)
+        if not result.daily_activity_panel_detected:
+            self.log_info(result.reason)
+        return result
+
+    def _record_daily_panel_open_result(self, result: DailyPanelOpenResult):
+        self.info_set("F1面板已打开", str(result.f1_panel_opened))
+        self.info_set("每日栏目已点击", str(result.daily_tab_clicked))
+        self.info_set("每日面板特征命中", str(result.daily_activity_panel_detected))
+        self.info_set("UI布局", result.layout_profile)
+        if result.reason:
+            self.info_set("每日面板打开状态", result.reason)
 
     def complete_daily_activities(self):
         """执行操作完成每日活跃度"""
         self.log_info("正在处理每日活跃度任务")
-        if not self._open_activity_panel():
+        open_result = self._open_activity_panel_result()
+        if not open_result.f1_panel_opened:
             return False
+        if not open_result.daily_activity_panel_detected:
+            self._set_skip_reason("完成每日活跃度", open_result.reason)
+            return self.TASK_SKIPPED
 
-        analysis = self._analyze_daily_activity()
+        analysis = self._analyze_daily_activity(panel_detected=True)
         self._record_daily_activity_analysis(analysis)
         if analysis.state == DailyActivityState.PANEL_NOT_FOUND:
             return False
@@ -235,8 +264,8 @@ class DailyTask(BaseNTETask):
         )
         return self.TASK_SKIPPED
 
-    def _analyze_daily_activity(self):
-        return DailyActivityAnalyzer(self).analyze()
+    def _analyze_daily_activity(self, panel_detected=None):
+        return DailyActivityAnalyzer(self).analyze(panel_detected=panel_detected)
 
     def _record_daily_activity_analysis(self, analysis):
         self.info_set("每日活跃度状态", analysis.state.value)
@@ -269,8 +298,12 @@ class DailyTask(BaseNTETask):
     def claim_activity_rewards(self):
         """领取活跃度奖励"""
         self.log_info("正在领取活跃度奖励")
-        if not self._open_activity_panel():
+        open_result = self._open_activity_panel_result()
+        if not open_result.f1_panel_opened:
             return False
+        if not open_result.daily_activity_panel_detected:
+            self._set_skip_reason("领取活跃度奖励", open_result.reason)
+            return self.TASK_SKIPPED
 
         claimed = self._claim_visible_activity_missions()
         if claimed:

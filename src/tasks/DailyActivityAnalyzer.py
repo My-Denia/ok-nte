@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from src.Labels import Labels
+from src.tasks.F1PanelDetector import F1PanelDetector
 
 
 class DailyActivityState(str, Enum):
@@ -116,10 +117,7 @@ class DailyActivityAnalyzer:
         )
 
     def _detect_panel(self):
-        finder = getattr(self.task, "find_one", None)
-        if finder is None:
-            return False
-        return bool(finder(Labels.f1_activity_panel))
+        return bool(F1PanelDetector(self.task).find_daily_activity_panel())
 
     def _detect_claimable_reward(self, frame):
         # No claimable reward sample is available yet; keep this conservative.

@@ -8,6 +8,7 @@ import numpy as np
 
 from src.tasks.DailyActivityAnalyzer import DailyActivityAnalysis, DailyActivityState
 from src.tasks.DailyTask import DailyTask
+from src.tasks.F1PanelDetector import DailyPanelOpenResult
 from src.tasks.debug.DailyActivityCaptureTask import DailyActivityCaptureTask
 
 
@@ -74,6 +75,8 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             metadata_image_paths,
             True,
             ANY,
+            ANY,
+            ANY,
         )
 
     def test_capture_current_activity_panel_can_include_ocr_boxes(self):
@@ -115,6 +118,8 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
 
         self.assertFalse(task._write_capture_metadata.call_args.args[4])
         self.assertIsInstance(task._write_capture_metadata.call_args.args[5], DailyActivityAnalysis)
+        self.assertIsInstance(task._write_capture_metadata.call_args.args[6], DailyPanelOpenResult)
+        self.assertIsInstance(task._write_capture_metadata.call_args.args[7], dict)
         task.info_set.assert_any_call("每日活跃度面板特征命中", "False")
 
     def test_box_to_dict_handles_box_shape(self):
@@ -171,16 +176,36 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
                     no_claimable_reward=True,
                     reason="今日活跃度已完成",
                 ),
+                DailyPanelOpenResult(
+                    f1_panel_opened=True,
+                    daily_tab_clicked=True,
+                    daily_activity_panel_detected=True,
+                    layout_profile="native_16_10",
+                    reason="每日活跃度面板已识别",
+                ),
+                {
+                    "f1_activity_panel": {
+                        "full_screen": {
+                            "matched": True,
+                            "threshold": 0.75,
+                            "box": [10, 20, 30, 40],
+                            "confidence": 0.8,
+                        }
+                    }
+                },
             )
 
             with open(metadata_path, encoding="utf-8") as f:
                 metadata = json.load(f)
 
-        self.assertEqual(metadata["schema_version"], 2)
+        self.assertEqual(metadata["schema_version"], 3)
         self.assertEqual(metadata["resolution"], {"width": 2560, "height": 1600})
         self.assertEqual(metadata["viewport"]["mode"], "16_9_center_crop")
         self.assertEqual(metadata["viewport"]["top"], 80)
         self.assertEqual(metadata["viewport"]["height"], 1440)
+        self.assertEqual(metadata["layout_profile"], "native_16_10")
+        self.assertTrue(metadata["open_result"]["f1_panel_opened"])
+        self.assertTrue(metadata["feature_probe"]["f1_activity_panel"]["full_screen"]["matched"])
         self.assertEqual(metadata["capture_files"]["raw"], "raw.png")
         self.assertEqual(metadata["capture_files"]["active"], "active.png")
         self.assertEqual(metadata["target_tab"]["name"], "daily")

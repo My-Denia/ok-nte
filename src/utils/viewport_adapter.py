@@ -7,6 +7,10 @@ MODE_NATIVE_SCREEN = "Native Screen"
 VIEWPORT_MODE_NATIVE_16_9 = "native_16_9"
 VIEWPORT_MODE_NATIVE_SCREEN = "native_screen"
 VIEWPORT_MODE_16_9_CENTER_CROP = "16_9_center_crop"
+LAYOUT_PROFILE_VIEWPORT_16_9 = "viewport_16_9"
+LAYOUT_PROFILE_NATIVE_16_9 = "native_16_9"
+LAYOUT_PROFILE_NATIVE_16_10 = "native_16_10"
+LAYOUT_PROFILE_NATIVE_UNKNOWN = "native_unknown"
 LETTERBOX_MEAN_THRESHOLD = 20.0
 LETTERBOX_STD_THRESHOLD = 8.0
 
@@ -181,3 +185,18 @@ def _is_flat_dark_band(band) -> bool:
     mean = float(band.mean())
     std = float(band.std())
     return mean <= LETTERBOX_MEAN_THRESHOLD and std <= LETTERBOX_STD_THRESHOLD
+
+
+def classify_ui_layout_profile(width: int, height: int, viewport_mode: str) -> str:
+    if viewport_mode != VIEWPORT_MODE_NATIVE_SCREEN:
+        return LAYOUT_PROFILE_VIEWPORT_16_9
+
+    if width <= 0 or height <= 0:
+        return LAYOUT_PROFILE_NATIVE_UNKNOWN
+
+    ratio = width / height
+    if abs(ratio - (16 / 10)) < 0.02:
+        return LAYOUT_PROFILE_NATIVE_16_10
+    if abs(ratio - TARGET_UI_RATIO) < 0.02:
+        return LAYOUT_PROFILE_NATIVE_16_9
+    return LAYOUT_PROFILE_NATIVE_UNKNOWN
