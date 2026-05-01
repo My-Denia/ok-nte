@@ -48,6 +48,8 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             result = DailyActivityCaptureTask._capture_current_activity_panel(task, frame)
             metadata_image_paths = task._write_capture_metadata.call_args.args[3]
             self.assertTrue(os.path.exists(metadata_image_paths["clean"]))
+            self.assertTrue(os.path.exists(metadata_image_paths["raw"]))
+            self.assertTrue(os.path.exists(metadata_image_paths["active"]))
             self.assertTrue(os.path.exists(metadata_image_paths["regions"]))
 
         self.assertTrue(result)
@@ -83,6 +85,7 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             DailyActivityCaptureTask._capture_current_activity_panel(task, frame)
             metadata_image_paths = task._write_capture_metadata.call_args.args[3]
             self.assertTrue(os.path.exists(metadata_image_paths["clean"]))
+            self.assertTrue(os.path.exists(metadata_image_paths["active"]))
             self.assertTrue(os.path.exists(metadata_image_paths["regions"]))
             self.assertTrue(task._write_capture_metadata.call_args.args[4])
 
@@ -141,7 +144,7 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
 
     def test_capture_metadata_records_daily_second_tab_target(self):
         task = object.__new__(DailyActivityCaptureTask)
-        task._executor = Mock(method=Mock(width=1920, height=1080))
+        task._executor = Mock(method=Mock(width=2560, height=1600))
 
         with tempfile.TemporaryDirectory() as temp_dir:
             task.CAPTURE_NAME_PREFIX = os.path.join(temp_dir, "daily_activity_capture")
@@ -150,7 +153,12 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
                 "capture",
                 [],
                 [],
-                {"clean": "clean.png", "regions": "regions.png"},
+                {
+                    "clean": "raw.png",
+                    "raw": "raw.png",
+                    "active": "active.png",
+                    "regions": "regions.png",
+                },
                 True,
                 DailyActivityAnalysis(
                     state=DailyActivityState.NO_ACTION_NEEDED,
@@ -168,7 +176,13 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             with open(metadata_path, encoding="utf-8") as f:
                 metadata = json.load(f)
 
-        self.assertEqual(metadata["schema_version"], 1)
+        self.assertEqual(metadata["schema_version"], 2)
+        self.assertEqual(metadata["resolution"], {"width": 2560, "height": 1600})
+        self.assertEqual(metadata["viewport"]["mode"], "16_9_center_crop")
+        self.assertEqual(metadata["viewport"]["top"], 80)
+        self.assertEqual(metadata["viewport"]["height"], 1440)
+        self.assertEqual(metadata["capture_files"]["raw"], "raw.png")
+        self.assertEqual(metadata["capture_files"]["active"], "active.png")
         self.assertEqual(metadata["target_tab"]["name"], "daily")
         self.assertEqual(metadata["target_tab"]["display_name"], "每日")
         self.assertEqual(metadata["target_tab"]["index"], 2)

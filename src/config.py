@@ -29,6 +29,18 @@ monthly_card_config_option = ConfigOption(
     },
 )
 
+resolution_config_option = ConfigOption(
+    "Resolution Adaptation Config",
+    {"UI Coordinate Mode": "Auto 16:9 Viewport"},
+    description="Adapt UI coordinates for fullscreen or non-16:9 resolutions",
+    config_description={
+        "UI Coordinate Mode": (
+            "Auto 16:9 Viewport: map existing 16:9 UI coordinates to a centered active viewport\n"
+            "Native Screen: use raw full-screen coordinates"
+        ),
+    },
+)
+
 
 def make_bottom_left_black(frame):  # 可选. 某些游戏截图时遮挡UID使用
     """
@@ -72,7 +84,7 @@ config = {
     "debug": False,  # Optional, default: False
     "use_gui": True,  # 目前只支持True
     "config_folder": "configs",  # 最好不要修改
-    "global_configs": [key_config_option, monthly_card_config_option],
+    "global_configs": [key_config_option, monthly_card_config_option, resolution_config_option],
     "screenshot_processor": make_bottom_left_black,  # 在截图的时候对frame进行修改, 可选
     "gui_icon": "icons/icon.png",  # 窗口图标, 最好不需要修改文件名
     "wait_until_before_delay": 0,

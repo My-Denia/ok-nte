@@ -18,6 +18,12 @@ from src.scene.NTEScene import NTEScene
 from src.scene.ScreenPosition import ScreenPosition
 from src.utils import game_filters as gf
 from src.utils import image_utils as iu
+from src.utils.viewport_adapter import (
+    MODE_AUTO_16_9_VIEWPORT,
+    MODE_NATIVE_SCREEN,
+    make_16_9_viewport,
+    make_native_viewport,
+)
 
 logger = Logger.get_logger(__name__)
 
@@ -30,6 +36,7 @@ class BaseNTETask(BaseTask):
         self.scene: NTEScene | None = None
         self.key_config = self.get_global_config("Game Hotkey Config")
         self.monthly_card_config = self.get_global_config("Monthly Card Config")
+        self.resolution_config = self.get_global_config("Resolution Adaptation Config")
         self._logged_in = False
         self.arrow_contour = {"contours": None, "shape": None}
         self.default_box = ScreenPosition(self)
@@ -45,6 +52,66 @@ class BaseNTETask(BaseTask):
     @property
     def main_viewport(self):
         return self.box_of_screen(0.1543, 0.1021, 0.9070, 0.6389)
+
+    def get_ui_coordinate_mode(self):
+        config = getattr(self, "resolution_config", None)
+        if config is None:
+            return MODE_AUTO_16_9_VIEWPORT
+
+        mode = config.get("UI Coordinate Mode")
+        if mode in (MODE_AUTO_16_9_VIEWPORT, MODE_NATIVE_SCREEN):
+            return mode
+        return MODE_AUTO_16_9_VIEWPORT
+
+    def get_ui_viewport(self, frame=None):
+        if frame is not None:
+            height, width = frame.shape[:2]
+        else:
+            width = self.width
+            height = self.height
+
+        if self.get_ui_coordinate_mode() == MODE_NATIVE_SCREEN:
+            return make_native_viewport(width, height)
+        return make_16_9_viewport(width, height)
+
+    def active_ui_frame(self, frame=None):
+        frame = self.frame if frame is None else frame
+        return self.get_ui_viewport(frame=frame).crop_active_frame(frame)
+
+    def ui_point(self, x: float, y: float, frame=None):
+        return self.get_ui_viewport(frame=frame).ui_point_to_screen_relative(x, y)
+
+    def click_ui(self, x, y=None, **kwargs):
+        if y is None:
+            return self.click(x, **kwargs)
+
+        px, py = self.get_ui_viewport().ui_point_to_screen_pixel(x, y)
+        return self.click(px, py, **kwargs)
+
+    def box_of_ui(
+        self,
+        x,
+        y,
+        to_x=1.0,
+        to_y=1.0,
+        width=0.0,
+        height=0.0,
+        name=None,
+        confidence=1.0,
+        frame=None,
+    ):
+        if name is None:
+            name = f"{x} {y} {width} {height}"
+
+        box_x, box_y, box_width, box_height = self.get_ui_viewport(
+            frame=frame
+        ).ui_box_to_screen_pixel(x, y, to_x=to_x, to_y=to_y, width=width, height=height)
+        return Box(box_x, box_y, box_width, box_height, name=name, confidence=confidence)
+
+    def ocr_ui(self, x, y, to_x=1.0, to_y=1.0, width=0.0, height=0.0, **kwargs):
+        frame = kwargs.get("frame")
+        kwargs["box"] = self.box_of_ui(x, y, to_x=to_x, to_y=to_y, width=width, height=height, frame=frame)
+        return self.ocr(**kwargs)
 
     @overload
     def click(self, x: int | Box | List[Box] = -1, y=-1, move_back=False, name=None, interval=-1,

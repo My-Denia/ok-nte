@@ -178,7 +178,7 @@ class DailyTask(BaseNTETask):
         """
         self.log_info("正在打开邮件面板")
         self.openESCpanel()
-        self.click(0.8707, 0.8736, after_sleep=1)
+        self.click_ui(0.8707, 0.8736, after_sleep=1)
         result = self.wait_panel(Labels.mail_panel)
         if not result:
             self.log_error("无法找到邮件面板", notify=True)
@@ -189,7 +189,7 @@ class DailyTask(BaseNTETask):
         """领取邮件"""
         self.log_info("正在领取邮件奖励")
         self._open_mail_panel()
-        self.click(0.1289, 0.9299)
+        self.click_ui(0.1289, 0.9299)
         self.sleep(1)
         return True
 
@@ -197,7 +197,7 @@ class DailyTask(BaseNTETask):
         """打开 F1 每日活跃度面板。"""
         self.openF1panel()
         self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
-        self.click(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
+        self.click_ui(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
         if not self.wait_panel(Labels.f1_activity_panel):
             self.log_error("无法找到每日活跃度面板", notify=True)
             return False
@@ -303,12 +303,12 @@ class DailyTask(BaseNTETask):
         """领取环期任务奖励"""
         self.log_info("正在领取环期任务奖励")
         self.openF2panel()
-        self.click(0.6934, 0.8229)
+        self.click_ui(0.6934, 0.8229)
         self.sleep(1)
-        self.click(0.0570, 0.3451)
+        self.click_ui(0.0570, 0.3451)
         if not self.wait_panel(Labels.f2_mission_panel):
             self.log_error("无法找到环期任务面板")
             return False
-        self.click(0.8777, 0.8187)
+        self.click_ui(0.8777, 0.8187)
         self.sleep(1)
         return True

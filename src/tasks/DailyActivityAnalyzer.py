@@ -137,6 +137,17 @@ class DailyActivityAnalyzer:
         return self._count_completed_reward_markers(reward_frame) >= self.COMPLETED_REWARD_MARKERS
 
     def _get_reward_box(self):
+        box_of_ui = getattr(self.task, "box_of_ui", None)
+        if box_of_ui is not None:
+            x, y, width, height = self.ACTIVITY_REWARD_REGION
+            return box_of_ui(
+                x,
+                y,
+                width=width,
+                height=height,
+                name=Labels.box_f1_activity_reward.value,
+            )
+
         getter = getattr(self.task, "get_box_by_name", None)
         if getter is not None:
             box = getter(Labels.box_f1_activity_reward)

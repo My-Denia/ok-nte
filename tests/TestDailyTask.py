@@ -101,7 +101,7 @@ class TestDailyTask(unittest.TestCase):
     def test_open_activity_panel_clicks_daily_second_tab(self):
         task = object.__new__(DailyTask)
         task.openF1panel = Mock()
-        task.click = Mock()
+        task.click_ui = Mock()
         task.wait_panel = Mock(return_value=True)
         task.info_set = Mock()
         task.log_error = Mock()
@@ -110,7 +110,7 @@ class TestDailyTask(unittest.TestCase):
 
         self.assertTrue(result)
         task.info_set.assert_called_once_with("每日活跃度目标栏目", "第2栏目")
-        task.click.assert_called_once_with(*DailyTask.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
+        task.click_ui.assert_called_once_with(*DailyTask.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
 
     def test_complete_daily_activities_reports_completed_simple_actions(self):
         task = object.__new__(DailyTask)

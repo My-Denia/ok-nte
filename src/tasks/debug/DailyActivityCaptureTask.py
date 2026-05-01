@@ -77,7 +77,7 @@ class DailyActivityCaptureTask(BaseNTETask):
     def _open_activity_panel(self):
         self.openF1panel()
         self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
-        self.click(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
+        self.click_ui(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
         if not self.wait_panel(Labels.f1_activity_panel):
             self.log_error("无法找到每日活跃度面板", notify=True)
             return False
@@ -92,7 +92,7 @@ class DailyActivityCaptureTask(BaseNTETask):
 
         image_paths = self._save_capture_images(capture_id, frame, candidate_boxes, ocr_boxes)
         analysis = DailyActivityAnalyzer(self).analyze(frame=frame, panel_detected=panel_detected)
-        self.screenshot(f"{self.CAPTURE_NAME_PREFIX}/{capture_id}_panel_clean", frame=frame)
+        self.screenshot(f"{self.CAPTURE_NAME_PREFIX}/{capture_id}_panel_raw", frame=frame)
 
         if self.config.get("保存候选区域标注", True):
             self.clear_box()
@@ -123,14 +123,21 @@ class DailyActivityCaptureTask(BaseNTETask):
             raise ValueError("daily activity capture frame cannot be None")
 
         os.makedirs(self.CAPTURE_FOLDER, exist_ok=True)
+        viewport = self.get_ui_viewport(frame=frame)
         image_paths = {
-            "clean": os.path.join(self.CAPTURE_FOLDER, f"{capture_id}_panel_clean.png"),
+            "raw": os.path.join(self.CAPTURE_FOLDER, f"{capture_id}_panel_raw.png"),
+            "active": os.path.join(
+                self.CAPTURE_FOLDER, f"{capture_id}_panel_active_16_9.png"
+            ),
             "regions": os.path.join(self.CAPTURE_FOLDER, f"{capture_id}_panel_regions.png"),
         }
+        image_paths["clean"] = image_paths["raw"]
 
-        self._write_frame(image_paths["clean"], frame)
+        self._write_frame(image_paths["raw"], frame)
+        self._write_frame(image_paths["active"], viewport.crop_active_frame(frame))
 
         boxed_frame = frame.copy()
+        self._draw_viewport_overlay(boxed_frame, viewport)
         self._draw_box_overlays(boxed_frame, candidate_boxes, (255, 0, 0))
         self._draw_box_overlays(boxed_frame, ocr_boxes, (0, 255, 0))
         self._write_frame(image_paths["regions"], boxed_frame)
@@ -165,12 +172,41 @@ class DailyActivityCaptureTask(BaseNTETask):
                     cv2.LINE_AA,
                 )
 
+    @staticmethod
+    def _draw_viewport_overlay(frame, viewport):
+        cv2.rectangle(
+            frame,
+            (viewport.left, viewport.top),
+            (max(0, viewport.right - 1), max(0, viewport.bottom - 1)),
+            (0, 255, 255),
+            2,
+        )
+        cv2.putText(
+            frame,
+            viewport.mode,
+            (viewport.left + 10, max(20, viewport.top - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
     def _candidate_region_boxes(self):
         boxes = [
-            self.box_of_screen(*definition, name=name)
+            self.box_of_ui(*definition, name=name)
             for name, definition in self.CANDIDATE_REGION_DEFINITIONS
         ]
-        boxes.append(self.get_box_by_name(Labels.box_f1_activity_reward))
+        x, y, width, height = DailyActivityAnalyzer.ACTIVITY_REWARD_REGION
+        boxes.append(
+            self.box_of_ui(
+                x,
+                y,
+                width=width,
+                height=height,
+                name=Labels.box_f1_activity_reward.value,
+            )
+        )
         return boxes
 
     def _write_capture_metadata(
@@ -185,8 +221,9 @@ class DailyActivityCaptureTask(BaseNTETask):
         folder = os.path.join("logs", self.CAPTURE_NAME_PREFIX)
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, f"{capture_id}.json")
+        viewport = self.get_ui_viewport()
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "capture_id": capture_id,
             "timestamp": capture_id,
             "panel_detected": panel_detected,
@@ -204,8 +241,15 @@ class DailyActivityCaptureTask(BaseNTETask):
                 },
             },
             "images": image_paths,
+            "capture_files": {
+                "raw": image_paths.get("raw") or image_paths.get("clean"),
+                "active": image_paths.get("active"),
+                "regions": image_paths.get("regions"),
+            },
             "screen": {"width": self.width, "height": self.height},
             "resolution": {"width": self.width, "height": self.height},
+            "viewport": viewport.to_dict(),
+            "ui_coordinate_mode": self.get_ui_coordinate_mode(),
             "regions": self._regions_to_dict(candidate_boxes),
             "candidate_regions": [self._box_to_dict(box) for box in candidate_boxes],
             "ocr": [self._box_to_dict(box) for box in ocr_boxes],
