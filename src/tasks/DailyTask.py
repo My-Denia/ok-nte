@@ -18,6 +18,7 @@ class DailyTask(BaseNTETask):
     MAX_ACTIVITY_MISSION_CLAIMS = 5
     DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
     ACTIVITY_REWARD_UNAVAILABLE = "未检测到可领取活跃度奖励"
+    SIMPLE_ACTIVITY_ACTIONS = ("领取邮件", "领取环期任务奖励")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -30,9 +31,9 @@ class DailyTask(BaseNTETask):
         self.default_config.update(
             {
                 "领取邮件": True,
+                "领取环期任务奖励": True,
                 "完成每日活跃度": True,
                 "领取活跃度奖励": True,
-                "领取环期任务奖励": True,
             }
         )
         self.current_task_key = None
@@ -52,9 +53,9 @@ class DailyTask(BaseNTETask):
 
         tasks = [
             ("领取邮件", self.claim_mail),
+            ("领取环期任务奖励", self.claim_battle_pass_rewards),
             ("完成每日活跃度", self.complete_daily_activities),
             ("领取活跃度奖励", self.claim_activity_rewards),
-            ("领取环期任务奖励", self.claim_battle_pass_rewards),
         ]
 
         self._reset_task_status(tasks)
@@ -62,7 +63,7 @@ class DailyTask(BaseNTETask):
         for key, func in tasks:
             self.execute_task(key, func)
 
-        self.ensure_main()
+        self._ensure_daily_main()
         self._print_result()
 
     def execute_task(self, key, func):
@@ -85,7 +86,7 @@ class DailyTask(BaseNTETask):
         self.current_task_key = key
         self.log_info(f"开始任务: {key}")
 
-        self.ensure_main()
+        self._ensure_daily_main()
 
         result = func()
 
@@ -118,6 +119,22 @@ class DailyTask(BaseNTETask):
             "skipped": [],
             "pending": [t[0] for t in tasks],
         }
+
+    def _ensure_daily_main(self):
+        """回到已登录的主界面，避免 DailyTask 误走登录页 OCR 检测。"""
+        self.info_set("current task", "wait daily main esc=True")
+        if self.wait_until(
+            lambda: self.in_team_and_world() or self.handle_monthly_card(),
+            time_out=30,
+            raise_if_not_found=False,
+            post_action=lambda: self.back(after_sleep=2),
+        ):
+            self._logged_in = True
+            self.sleep(0.5)
+            self.info_set("current task", "in daily main")
+            return True
+
+        raise Exception("Please start in game world and in team!")
 
     def _print_result(self):
         """输出任务执行结果。"""
@@ -181,12 +198,21 @@ class DailyTask(BaseNTETask):
             self.log_info(f"已领取 {claimed} 个已完成的每日活跃度任务")
             return True
 
+        completed_simple_actions = self._completed_simple_activity_actions()
+        if completed_simple_actions:
+            self.info_set("每日活跃度已尝试动作", "/".join(completed_simple_actions))
+
         self.info_set("每日活跃度缺失特征", self.DAILY_ACTIVITY_MISSING_FEATURES)
         self.log_info(
             "未检测到可领取的每日活跃度任务；"
             f"自动完成具体任务仍缺少特征: {self.DAILY_ACTIVITY_MISSING_FEATURES}"
         )
         return self.TASK_SKIPPED
+
+    def _completed_simple_activity_actions(self):
+        """返回本轮已经执行过、可能贡献每日活跃度的简单动作。"""
+        success = self.task_status.get("success", [])
+        return [key for key in self.SIMPLE_ACTIVITY_ACTIONS if key in success]
 
     def _claim_visible_activity_missions(self, max_clicks=None):
         """领取当前活跃页中已完成、可见的每日任务奖励。"""
