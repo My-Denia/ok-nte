@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "ok-script>=1.0.108",
     "onnxocr-ppocrv5>=0.0.15",
-    "opencc>=1.2.0",
+    "opencc>=1.2.0,<1.3.0",
     "opencv-python>=4.13.0.92",
     "openvino>=2026.1.0",
     "pynput>=1.8.1",
