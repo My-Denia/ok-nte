@@ -5,6 +5,7 @@ from qfluentwidgets import FluentIcon
 from ok import TaskDisabledException, find_color_rectangles
 from src import text_white_color
 from src.Labels import Labels
+from src.tasks.DailyActivityAnalyzer import DailyActivityAnalyzer, DailyActivityState
 from src.tasks.BaseNTETask import BaseNTETask
 from src.utils import image_utils as iu
 
@@ -29,6 +30,7 @@ class DailyTask(BaseNTETask):
         self.icon = FluentIcon.SYNC
         self.support_schedule_task = False
         self.task_status = {"success": [], "failed": [], "skipped": [], "pending": []}
+        self.task_skip_reasons = {}
 
         self.default_config.update(
             {
@@ -82,7 +84,7 @@ class DailyTask(BaseNTETask):
 
         # 开关控制
         if not self.config.get(key, False):
-            self.task_status["skipped"].append(key)
+            self._mark_skipped(key, "配置已关闭")
             return
 
         self.current_task_key = key
@@ -100,7 +102,7 @@ class DailyTask(BaseNTETask):
             return
 
         if result is self.TASK_SKIPPED:
-            self.task_status["skipped"].append(key)
+            self._mark_skipped(key, self.task_skip_reasons.get(key, ""))
             self.log_info(f"任务跳过: {key}")
             self.current_task_key = None
             return
@@ -121,6 +123,15 @@ class DailyTask(BaseNTETask):
             "skipped": [],
             "pending": [t[0] for t in tasks],
         }
+        self.task_skip_reasons = {}
+
+    def _set_skip_reason(self, key, reason):
+        if reason:
+            self.task_skip_reasons[key] = reason
+
+    def _mark_skipped(self, key, reason=""):
+        self.task_status["skipped"].append(key)
+        self._set_skip_reason(key, reason)
 
     def _ensure_daily_main(self):
         """回到已登录的主界面，避免 DailyTask 误走登录页 OCR 检测。"""
@@ -143,6 +154,8 @@ class DailyTask(BaseNTETask):
         self.info_set("success", f"{self.task_status['success']}")
         self.info_set("failed", f"{self.task_status['failed']}")
         self.info_set("skipped", f"{self.task_status['skipped']}")
+        if self.task_skip_reasons:
+            self.info_set("skip_reasons", f"{self.task_skip_reasons}")
 
     def _handle_exception(self, e):
         """处理执行异常并记录状态。
@@ -196,6 +209,15 @@ class DailyTask(BaseNTETask):
         if not self._open_activity_panel():
             return False
 
+        analysis = self._analyze_daily_activity()
+        self._record_daily_activity_analysis(analysis)
+        if analysis.state == DailyActivityState.PANEL_NOT_FOUND:
+            return False
+        if analysis.state == DailyActivityState.NO_ACTION_NEEDED:
+            self._set_skip_reason("完成每日活跃度", analysis.reason)
+            self.log_info(analysis.reason)
+            return self.TASK_SKIPPED
+
         claimed = self._claim_visible_activity_missions()
         if claimed:
             self.log_info(f"已领取 {claimed} 个已完成的每日活跃度任务")
@@ -206,11 +228,19 @@ class DailyTask(BaseNTETask):
             self.info_set("每日活跃度已尝试动作", "/".join(completed_simple_actions))
 
         self.info_set("每日活跃度缺失特征", self.DAILY_ACTIVITY_MISSING_FEATURES)
+        self._set_skip_reason("完成每日活跃度", analysis.reason)
         self.log_info(
             "未检测到可领取的每日活跃度任务；"
             f"自动完成具体任务仍缺少特征: {self.DAILY_ACTIVITY_MISSING_FEATURES}"
         )
         return self.TASK_SKIPPED
+
+    def _analyze_daily_activity(self):
+        return DailyActivityAnalyzer(self).analyze()
+
+    def _record_daily_activity_analysis(self, analysis):
+        self.info_set("每日活跃度状态", analysis.state.value)
+        self.info_set("每日活跃度状态原因", analysis.reason)
 
     def _completed_simple_activity_actions(self):
         """返回本轮已经执行过、可能贡献每日活跃度的简单动作。"""
@@ -251,6 +281,7 @@ class DailyTask(BaseNTETask):
             self.sleep(1)
         else:
             self.info_set("活跃度奖励状态", self.ACTIVITY_REWARD_UNAVAILABLE)
+            self._set_skip_reason("领取活跃度奖励", self.ACTIVITY_REWARD_UNAVAILABLE)
             self.log_info(self.ACTIVITY_REWARD_UNAVAILABLE)
             return self.TASK_SKIPPED
         return True

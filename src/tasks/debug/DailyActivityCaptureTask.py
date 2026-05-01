@@ -7,6 +7,7 @@ from qfluentwidgets import FluentIcon
 
 from ok import TaskDisabledException
 from src.Labels import Labels
+from src.tasks.DailyActivityAnalyzer import DailyActivityAnalyzer
 from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.DailyTask import DailyTask
 
@@ -90,6 +91,7 @@ class DailyActivityCaptureTask(BaseNTETask):
             ocr_boxes = self.ocr(frame=frame, log=True)
 
         image_paths = self._save_capture_images(capture_id, frame, candidate_boxes, ocr_boxes)
+        analysis = DailyActivityAnalyzer(self).analyze(frame=frame, panel_detected=panel_detected)
         self.screenshot(f"{self.CAPTURE_NAME_PREFIX}/{capture_id}_panel_clean", frame=frame)
 
         if self.config.get("保存候选区域标注", True):
@@ -109,6 +111,7 @@ class DailyActivityCaptureTask(BaseNTETask):
             ocr_boxes,
             image_paths,
             panel_detected,
+            analysis,
         )
         self.info_set("每日活跃度采集ID", capture_id)
         self.info_set("每日活跃度采集元数据", metadata_path)
@@ -170,15 +173,30 @@ class DailyActivityCaptureTask(BaseNTETask):
         boxes.append(self.get_box_by_name(Labels.box_f1_activity_reward))
         return boxes
 
-    def _write_capture_metadata(self, capture_id, candidate_boxes, ocr_boxes, image_paths, panel_detected):
+    def _write_capture_metadata(
+        self,
+        capture_id,
+        candidate_boxes,
+        ocr_boxes,
+        image_paths,
+        panel_detected,
+        analysis,
+    ):
         folder = os.path.join("logs", self.CAPTURE_NAME_PREFIX)
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, f"{capture_id}.json")
         payload = {
+            "schema_version": 1,
             "capture_id": capture_id,
+            "timestamp": capture_id,
             "panel_detected": panel_detected,
+            "panel": {
+                "detected": panel_detected,
+                "label": Labels.f1_activity_panel.value,
+            },
             "target_tab": {
-                "name": "每日",
+                "name": "daily",
+                "display_name": "每日",
                 "index": self.DAILY_ACTIVITY_TAB_INDEX,
                 "position": {
                     "x": self.DAILY_ACTIVITY_TAB_POSITION[0],
@@ -187,13 +205,41 @@ class DailyActivityCaptureTask(BaseNTETask):
             },
             "images": image_paths,
             "screen": {"width": self.width, "height": self.height},
+            "resolution": {"width": self.width, "height": self.height},
+            "regions": self._regions_to_dict(candidate_boxes),
             "candidate_regions": [self._box_to_dict(box) for box in candidate_boxes],
             "ocr": [self._box_to_dict(box) for box in ocr_boxes],
+            "analysis": analysis.to_dict(),
             "missing_features": DailyTask.DAILY_ACTIVITY_MISSING_FEATURES,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         return path
+
+    def _regions_to_dict(self, boxes):
+        return {
+            str(getattr(box, "name", "")): {
+                "pixel": [
+                    getattr(box, "x", None),
+                    getattr(box, "y", None),
+                    getattr(box, "width", None),
+                    getattr(box, "height", None),
+                ],
+                "relative": [
+                    self._safe_ratio(getattr(box, "x", 0), self.width),
+                    self._safe_ratio(getattr(box, "y", 0), self.height),
+                    self._safe_ratio(getattr(box, "width", 0), self.width),
+                    self._safe_ratio(getattr(box, "height", 0), self.height),
+                ],
+            }
+            for box in boxes
+        }
+
+    @staticmethod
+    def _safe_ratio(value, total):
+        if not total:
+            return 0
+        return round(value / total, 4)
 
     @staticmethod
     def _box_to_dict(box):

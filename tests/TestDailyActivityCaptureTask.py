@@ -6,6 +6,7 @@ from unittest.mock import ANY, Mock, call
 
 import numpy as np
 
+from src.tasks.DailyActivityAnalyzer import DailyActivityAnalysis, DailyActivityState
 from src.tasks.DailyTask import DailyTask
 from src.tasks.debug.DailyActivityCaptureTask import DailyActivityCaptureTask
 
@@ -34,6 +35,8 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
         task.info_set = Mock()
         task._write_capture_metadata = Mock(return_value="logs/daily_activity_capture/id.json")
         task._candidate_region_boxes = Mock(return_value=[FakeBox("daily_task_list")])
+        task.get_box_by_name = Mock(return_value=FakeBox("box_f1_activity_reward", 10, 10, 80, 20))
+        task._executor = Mock(method=Mock(width=160, height=120))
         return task
 
     def test_capture_current_activity_panel_saves_clean_and_region_screenshots(self):
@@ -68,6 +71,7 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             [],
             metadata_image_paths,
             True,
+            ANY,
         )
 
     def test_capture_current_activity_panel_can_include_ocr_boxes(self):
@@ -107,6 +111,7 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
             )
 
         self.assertFalse(task._write_capture_metadata.call_args.args[4])
+        self.assertIsInstance(task._write_capture_metadata.call_args.args[5], DailyActivityAnalysis)
         task.info_set.assert_any_call("每日活跃度面板特征命中", "False")
 
     def test_box_to_dict_handles_box_shape(self):
@@ -147,13 +152,27 @@ class TestDailyActivityCaptureTask(unittest.TestCase):
                 [],
                 {"clean": "clean.png", "regions": "regions.png"},
                 True,
+                DailyActivityAnalysis(
+                    state=DailyActivityState.NO_ACTION_NEEDED,
+                    panel_detected=True,
+                    daily_tab_detected=True,
+                    activity_full=True,
+                    all_daily_done=True,
+                    has_go_button=False,
+                    has_claimable_reward=False,
+                    no_claimable_reward=True,
+                    reason="今日活跃度已完成",
+                ),
             )
 
             with open(metadata_path, encoding="utf-8") as f:
                 metadata = json.load(f)
 
-        self.assertEqual(metadata["target_tab"]["name"], "每日")
+        self.assertEqual(metadata["schema_version"], 1)
+        self.assertEqual(metadata["target_tab"]["name"], "daily")
+        self.assertEqual(metadata["target_tab"]["display_name"], "每日")
         self.assertEqual(metadata["target_tab"]["index"], 2)
+        self.assertEqual(metadata["analysis"]["state"], "no_action_needed")
         self.assertEqual(
             metadata["target_tab"]["position"],
             {

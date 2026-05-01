@@ -1,7 +1,22 @@
 import unittest
 from unittest.mock import Mock, call
 
+from src.tasks.DailyActivityAnalyzer import DailyActivityAnalysis, DailyActivityState
 from src.tasks.DailyTask import DailyTask
+
+
+def make_analysis(state=DailyActivityState.UNKNOWN, reason="缺少未完成/前往按钮/可领取状态特征"):
+    return DailyActivityAnalysis(
+        state=state,
+        panel_detected=state != DailyActivityState.PANEL_NOT_FOUND,
+        daily_tab_detected=state != DailyActivityState.PANEL_NOT_FOUND,
+        activity_full=state == DailyActivityState.NO_ACTION_NEEDED,
+        all_daily_done=state == DailyActivityState.NO_ACTION_NEEDED,
+        has_go_button=False,
+        has_claimable_reward=state == DailyActivityState.HAS_CLAIMABLE_REWARD,
+        no_claimable_reward=state != DailyActivityState.HAS_CLAIMABLE_REWARD,
+        reason=reason,
+    )
 
 
 class TestDailyTask(unittest.TestCase):
@@ -15,6 +30,7 @@ class TestDailyTask(unittest.TestCase):
             "pending": ["测试任务"],
         }
         task.current_task_key = None
+        task.task_skip_reasons = {}
         task._ensure_daily_main = Mock()
         task.screenshot = Mock()
         task.log_info = Mock()
@@ -43,8 +59,11 @@ class TestDailyTask(unittest.TestCase):
     def test_complete_daily_activities_skips_when_no_claimable_mission(self):
         task = object.__new__(DailyTask)
         task._open_activity_panel = Mock(return_value=True)
+        task._analyze_daily_activity = Mock(return_value=make_analysis())
+        task._record_daily_activity_analysis = Mock()
         task._claim_visible_activity_missions = Mock(return_value=0)
         task.task_status = {"success": []}
+        task.task_skip_reasons = {}
         task.info_set = Mock()
         task.log_info = Mock()
 
@@ -55,6 +74,29 @@ class TestDailyTask(unittest.TestCase):
             "每日活跃度缺失特征",
             DailyTask.DAILY_ACTIVITY_MISSING_FEATURES,
         )
+        self.assertEqual(
+            task.task_skip_reasons["完成每日活跃度"],
+            "缺少未完成/前往按钮/可领取状态特征",
+        )
+
+    def test_complete_daily_activities_skips_when_activity_done_by_analysis(self):
+        task = object.__new__(DailyTask)
+        task._open_activity_panel = Mock(return_value=True)
+        task._analyze_daily_activity = Mock(
+            return_value=make_analysis(DailyActivityState.NO_ACTION_NEEDED, "今日活跃度已完成")
+        )
+        task._record_daily_activity_analysis = Mock()
+        task._claim_visible_activity_missions = Mock()
+        task.task_skip_reasons = {}
+        task.info_set = Mock()
+        task.log_info = Mock()
+
+        result = DailyTask.complete_daily_activities(task)
+
+        self.assertIs(result, DailyTask.TASK_SKIPPED)
+        task._claim_visible_activity_missions.assert_not_called()
+        self.assertEqual(task.task_skip_reasons["完成每日活跃度"], "今日活跃度已完成")
+        task.log_info.assert_any_call("今日活跃度已完成")
 
     def test_open_activity_panel_clicks_daily_second_tab(self):
         task = object.__new__(DailyTask)
@@ -73,8 +115,11 @@ class TestDailyTask(unittest.TestCase):
     def test_complete_daily_activities_reports_completed_simple_actions(self):
         task = object.__new__(DailyTask)
         task._open_activity_panel = Mock(return_value=True)
+        task._analyze_daily_activity = Mock(return_value=make_analysis())
+        task._record_daily_activity_analysis = Mock()
         task._claim_visible_activity_missions = Mock(return_value=0)
         task.task_status = {"success": ["领取邮件", "领取环期任务奖励"]}
+        task.task_skip_reasons = {}
         task.info_set = Mock()
         task.log_info = Mock()
 
@@ -98,6 +143,7 @@ class TestDailyTask(unittest.TestCase):
         }
         task.task_status = {"success": [], "failed": [], "skipped": [], "pending": []}
         task.current_task_key = None
+        task.task_skip_reasons = {}
         task._ensure_daily_main = Mock()
         task.info_set = Mock()
         task.log_info = Mock()
@@ -159,6 +205,7 @@ class TestDailyTask(unittest.TestCase):
         task._open_activity_panel = Mock(return_value=True)
         task._claim_visible_activity_missions = Mock(return_value=0)
         task._get_activity_reward_box = Mock(return_value=None)
+        task.task_skip_reasons = {}
         task.info_set = Mock()
         task.log_info = Mock()
 
@@ -167,6 +214,10 @@ class TestDailyTask(unittest.TestCase):
         self.assertIs(result, DailyTask.TASK_SKIPPED)
         task.info_set.assert_called_once_with(
             "活跃度奖励状态",
+            DailyTask.ACTIVITY_REWARD_UNAVAILABLE,
+        )
+        self.assertEqual(
+            task.task_skip_reasons["领取活跃度奖励"],
             DailyTask.ACTIVITY_REWARD_UNAVAILABLE,
         )
         task.log_info.assert_any_call(DailyTask.ACTIVITY_REWARD_UNAVAILABLE)
