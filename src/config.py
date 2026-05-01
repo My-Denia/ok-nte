@@ -29,6 +29,18 @@ monthly_card_config_option = ConfigOption(
     },
 )
 
+resolution_config_option = ConfigOption(
+    "Resolution Adaptation Config",
+    {"UI Coordinate Mode": "Auto 16:9 Viewport"},
+    description="Adapt UI coordinates for fullscreen or non-16:9 resolutions",
+    config_description={
+        "UI Coordinate Mode": (
+            "Auto 16:9 Viewport: use native full-screen coordinates unless black-bar letterbox/pillarbox is detected\n"
+            "Native Screen: use raw full-screen coordinates"
+        ),
+    },
+)
+
 
 def make_bottom_left_black(frame):  # 可选. 某些游戏截图时遮挡UID使用
     """
@@ -72,7 +84,7 @@ config = {
     "debug": False,  # Optional, default: False
     "use_gui": True,  # 目前只支持True
     "config_folder": "configs",  # 最好不要修改
-    "global_configs": [key_config_option, monthly_card_config_option],
+    "global_configs": [key_config_option, monthly_card_config_option, resolution_config_option],
     "screenshot_processor": make_bottom_left_black,  # 在截图的时候对frame进行修改, 可选
     "gui_icon": "icons/icon.png",  # 窗口图标, 最好不需要修改文件名
     "wait_until_before_delay": 0,
@@ -120,9 +132,9 @@ config = {
         "min_height": 450,
     },
     "supported_resolution": {
-        "ratio": "16:9",  # 支持的游戏分辨率
+        "ratio": "16:9",  # UI 坐标基准；非 16:9 分辨率由 ViewportAdapter 映射
         "min_size": (1920, 1080),  # 支持的最低游戏分辨率
-        "resize_to": [(2560, 1440), (1920, 1080)],  # 可选, 如果非16:9自动缩放为 resize_to
+        "resize_to": [],  # 不自动改回 16:9，避免破坏 2560x1600 采集
     },
     "links": {  # 关于里显示的链接, 可选
         "default": {
@@ -171,6 +183,7 @@ config = {
     ],  # 可选. 全局单例对象, 可以存放加载的模型, 使用og.my_app调用
     "onetime_tasks": [  # 用户点击触发的任务
         ["src.tasks.DailyTask", "DailyTask"],
+        ["src.tasks.debug.DailyActivityCaptureTask", "DailyActivityCaptureTask"],
         ["src.tasks.FishingTask", "FishingTask"],
         # ["src.tasks.MyOneTimeTask", "MyOneTimeTask"],
         # ["src.tasks.MyOneTimeWithAGroup", "MyOneTimeWithAGroup"],

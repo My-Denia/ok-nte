@@ -5,7 +5,9 @@ from qfluentwidgets import FluentIcon
 from ok import TaskDisabledException, find_color_rectangles
 from src import text_white_color
 from src.Labels import Labels
+from src.tasks.DailyActivityAnalyzer import DailyActivityAnalyzer, DailyActivityState
 from src.tasks.BaseNTETask import BaseNTETask
+from src.tasks.F1PanelDetector import DailyPanelOpenResult, F1PanelDetector
 from src.utils import image_utils as iu
 
 
@@ -14,7 +16,9 @@ class DailyTask(BaseNTETask):
 
     DEFAULT_MOVE = True
     TASK_SKIPPED = object()
-    ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
+    DAILY_ACTIVITY_TAB_INDEX = 2
+    DAILY_ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
+    ACTIVITY_TAB_POSITION = DAILY_ACTIVITY_TAB_POSITION
     MAX_ACTIVITY_MISSION_CLAIMS = 5
     DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
     ACTIVITY_REWARD_UNAVAILABLE = "未检测到可领取活跃度奖励"
@@ -27,6 +31,7 @@ class DailyTask(BaseNTETask):
         self.icon = FluentIcon.SYNC
         self.support_schedule_task = False
         self.task_status = {"success": [], "failed": [], "skipped": [], "pending": []}
+        self.task_skip_reasons = {}
 
         self.default_config.update(
             {
@@ -80,7 +85,7 @@ class DailyTask(BaseNTETask):
 
         # 开关控制
         if not self.config.get(key, False):
-            self.task_status["skipped"].append(key)
+            self._mark_skipped(key, "配置已关闭")
             return
 
         self.current_task_key = key
@@ -98,7 +103,7 @@ class DailyTask(BaseNTETask):
             return
 
         if result is self.TASK_SKIPPED:
-            self.task_status["skipped"].append(key)
+            self._mark_skipped(key, self.task_skip_reasons.get(key, ""))
             self.log_info(f"任务跳过: {key}")
             self.current_task_key = None
             return
@@ -119,6 +124,15 @@ class DailyTask(BaseNTETask):
             "skipped": [],
             "pending": [t[0] for t in tasks],
         }
+        self.task_skip_reasons = {}
+
+    def _set_skip_reason(self, key, reason):
+        if reason:
+            self.task_skip_reasons[key] = reason
+
+    def _mark_skipped(self, key, reason=""):
+        self.task_status["skipped"].append(key)
+        self._set_skip_reason(key, reason)
 
     def _ensure_daily_main(self):
         """回到已登录的主界面，避免 DailyTask 误走登录页 OCR 检测。"""
@@ -141,6 +155,8 @@ class DailyTask(BaseNTETask):
         self.info_set("success", f"{self.task_status['success']}")
         self.info_set("failed", f"{self.task_status['failed']}")
         self.info_set("skipped", f"{self.task_status['skipped']}")
+        if self.task_skip_reasons:
+            self.info_set("skip_reasons", f"{self.task_skip_reasons}")
 
     def _handle_exception(self, e):
         """处理执行异常并记录状态。
@@ -163,7 +179,7 @@ class DailyTask(BaseNTETask):
         """
         self.log_info("正在打开邮件面板")
         self.openESCpanel()
-        self.click(0.8707, 0.8736, after_sleep=1)
+        self.click_ui(0.8707, 0.8736, after_sleep=1)
         result = self.wait_panel(Labels.mail_panel)
         if not result:
             self.log_error("无法找到邮件面板", notify=True)
@@ -174,24 +190,62 @@ class DailyTask(BaseNTETask):
         """领取邮件"""
         self.log_info("正在领取邮件奖励")
         self._open_mail_panel()
-        self.click(0.1289, 0.9299)
+        self.click_ui(0.1289, 0.9299)
         self.sleep(1)
         return True
 
     def _open_activity_panel(self):
         """打开 F1 每日活跃度面板。"""
-        self.openF1panel()
-        self.click(*self.ACTIVITY_TAB_POSITION)
-        if not self.wait_panel(Labels.f1_activity_panel):
-            self.log_error("无法找到每日活跃度面板", notify=True)
-            return False
-        return True
+        return self._open_activity_panel_result().daily_activity_panel_detected
+
+    def _open_activity_panel_result(self):
+        """打开 F1 每日第二栏目，并区分 F1 面板打开与每日页模板命中。"""
+        detector = F1PanelDetector(self)
+        f1_panel_opened = False
+        daily_tab_clicked = False
+
+        try:
+            self.openF1panel()
+            f1_panel_opened = True
+        except Exception:
+            result = detector.make_open_result(False, False, False)
+            self._record_daily_panel_open_result(result)
+            return result
+        self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
+        self.click_ui(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
+        daily_tab_clicked = True
+        result = detector.make_open_result(f1_panel_opened, daily_tab_clicked)
+        self._record_daily_panel_open_result(result)
+        if not result.daily_activity_panel_detected:
+            self.log_info(result.reason)
+        return result
+
+    def _record_daily_panel_open_result(self, result: DailyPanelOpenResult):
+        self.info_set("F1面板已打开", str(result.f1_panel_opened))
+        self.info_set("每日栏目已点击", str(result.daily_tab_clicked))
+        self.info_set("每日面板特征命中", str(result.daily_activity_panel_detected))
+        self.info_set("UI布局", result.layout_profile)
+        if result.reason:
+            self.info_set("每日面板打开状态", result.reason)
 
     def complete_daily_activities(self):
         """执行操作完成每日活跃度"""
         self.log_info("正在处理每日活跃度任务")
-        if not self._open_activity_panel():
+        open_result = self._open_activity_panel_result()
+        if not open_result.f1_panel_opened:
             return False
+        if not open_result.daily_activity_panel_detected:
+            self._set_skip_reason("完成每日活跃度", open_result.reason)
+            return self.TASK_SKIPPED
+
+        analysis = self._analyze_daily_activity(panel_detected=True)
+        self._record_daily_activity_analysis(analysis)
+        if analysis.state == DailyActivityState.PANEL_NOT_FOUND:
+            return False
+        if analysis.state == DailyActivityState.NO_ACTION_NEEDED:
+            self._set_skip_reason("完成每日活跃度", analysis.reason)
+            self.log_info(analysis.reason)
+            return self.TASK_SKIPPED
 
         claimed = self._claim_visible_activity_missions()
         if claimed:
@@ -203,11 +257,19 @@ class DailyTask(BaseNTETask):
             self.info_set("每日活跃度已尝试动作", "/".join(completed_simple_actions))
 
         self.info_set("每日活跃度缺失特征", self.DAILY_ACTIVITY_MISSING_FEATURES)
+        self._set_skip_reason("完成每日活跃度", analysis.reason)
         self.log_info(
             "未检测到可领取的每日活跃度任务；"
             f"自动完成具体任务仍缺少特征: {self.DAILY_ACTIVITY_MISSING_FEATURES}"
         )
         return self.TASK_SKIPPED
+
+    def _analyze_daily_activity(self, panel_detected=None):
+        return DailyActivityAnalyzer(self).analyze(panel_detected=panel_detected)
+
+    def _record_daily_activity_analysis(self, analysis):
+        self.info_set("每日活跃度状态", analysis.state.value)
+        self.info_set("每日活跃度状态原因", analysis.reason)
 
     def _completed_simple_activity_actions(self):
         """返回本轮已经执行过、可能贡献每日活跃度的简单动作。"""
@@ -236,8 +298,12 @@ class DailyTask(BaseNTETask):
     def claim_activity_rewards(self):
         """领取活跃度奖励"""
         self.log_info("正在领取活跃度奖励")
-        if not self._open_activity_panel():
+        open_result = self._open_activity_panel_result()
+        if not open_result.f1_panel_opened:
             return False
+        if not open_result.daily_activity_panel_detected:
+            self._set_skip_reason("领取活跃度奖励", open_result.reason)
+            return self.TASK_SKIPPED
 
         claimed = self._claim_visible_activity_missions()
         if claimed:
@@ -248,6 +314,7 @@ class DailyTask(BaseNTETask):
             self.sleep(1)
         else:
             self.info_set("活跃度奖励状态", self.ACTIVITY_REWARD_UNAVAILABLE)
+            self._set_skip_reason("领取活跃度奖励", self.ACTIVITY_REWARD_UNAVAILABLE)
             self.log_info(self.ACTIVITY_REWARD_UNAVAILABLE)
             return self.TASK_SKIPPED
         return True
@@ -269,12 +336,12 @@ class DailyTask(BaseNTETask):
         """领取环期任务奖励"""
         self.log_info("正在领取环期任务奖励")
         self.openF2panel()
-        self.click(0.6934, 0.8229)
+        self.click_ui(0.6934, 0.8229)
         self.sleep(1)
-        self.click(0.0570, 0.3451)
+        self.click_ui(0.0570, 0.3451)
         if not self.wait_panel(Labels.f2_mission_panel):
             self.log_error("无法找到环期任务面板")
             return False
-        self.click(0.8777, 0.8187)
+        self.click_ui(0.8777, 0.8187)
         self.sleep(1)
         return True
