@@ -21,7 +21,7 @@ from src.utils import image_utils as iu
 from src.utils.viewport_adapter import (
     MODE_AUTO_16_9_VIEWPORT,
     MODE_NATIVE_SCREEN,
-    make_16_9_viewport,
+    make_auto_viewport,
     make_native_viewport,
 )
 
@@ -64,15 +64,28 @@ class BaseNTETask(BaseTask):
         return MODE_AUTO_16_9_VIEWPORT
 
     def get_ui_viewport(self, frame=None):
-        if frame is not None:
-            height, width = frame.shape[:2]
+        if frame is None:
+            try:
+                frame = self.frame
+            except Exception:
+                frame = None
+
+        shape = getattr(frame, "shape", None)
+        try:
+            has_frame_shape = shape is not None and len(shape) >= 2
+        except TypeError:
+            has_frame_shape = False
+
+        if has_frame_shape:
+            height, width = shape[:2]
         else:
+            frame = None
             width = self.width
             height = self.height
 
         if self.get_ui_coordinate_mode() == MODE_NATIVE_SCREEN:
             return make_native_viewport(width, height)
-        return make_16_9_viewport(width, height)
+        return make_auto_viewport(width, height, frame=frame)
 
     def active_ui_frame(self, frame=None):
         frame = self.frame if frame is None else frame

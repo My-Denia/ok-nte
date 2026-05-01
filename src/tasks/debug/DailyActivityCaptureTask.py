@@ -127,7 +127,7 @@ class DailyActivityCaptureTask(BaseNTETask):
         image_paths = {
             "raw": os.path.join(self.CAPTURE_FOLDER, f"{capture_id}_panel_raw.png"),
             "active": os.path.join(
-                self.CAPTURE_FOLDER, f"{capture_id}_panel_active_16_9.png"
+                self.CAPTURE_FOLDER, f"{capture_id}_panel_active_ui.png"
             ),
             "regions": os.path.join(self.CAPTURE_FOLDER, f"{capture_id}_panel_regions.png"),
         }

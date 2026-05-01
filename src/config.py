@@ -35,7 +35,7 @@ resolution_config_option = ConfigOption(
     description="Adapt UI coordinates for fullscreen or non-16:9 resolutions",
     config_description={
         "UI Coordinate Mode": (
-            "Auto 16:9 Viewport: map existing 16:9 UI coordinates to a centered active viewport\n"
+            "Auto 16:9 Viewport: use native full-screen coordinates unless black-bar letterbox/pillarbox is detected\n"
             "Native Screen: use raw full-screen coordinates"
         ),
     },
@@ -132,9 +132,9 @@ config = {
         "min_height": 450,
     },
     "supported_resolution": {
-        "ratio": "16:9",  # 支持的游戏分辨率
+        "ratio": "16:9",  # UI 坐标基准；非 16:9 分辨率由 ViewportAdapter 映射
         "min_size": (1920, 1080),  # 支持的最低游戏分辨率
-        "resize_to": [(2560, 1440), (1920, 1080)],  # 可选, 如果非16:9自动缩放为 resize_to
+        "resize_to": [],  # 不自动改回 16:9，避免破坏 2560x1600 采集
     },
     "links": {  # 关于里显示的链接, 可选
         "default": {

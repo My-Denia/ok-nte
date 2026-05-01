@@ -7,6 +7,8 @@ MODE_NATIVE_SCREEN = "Native Screen"
 VIEWPORT_MODE_NATIVE_16_9 = "native_16_9"
 VIEWPORT_MODE_NATIVE_SCREEN = "native_screen"
 VIEWPORT_MODE_16_9_CENTER_CROP = "16_9_center_crop"
+LETTERBOX_MEAN_THRESHOLD = 20.0
+LETTERBOX_STD_THRESHOLD = 8.0
 
 
 @dataclass(frozen=True)
@@ -139,3 +141,43 @@ def make_16_9_viewport(width: int, height: int) -> Viewport:
         height=active_height,
         mode=VIEWPORT_MODE_16_9_CENTER_CROP,
     )
+
+
+def make_auto_viewport(width: int, height: int, frame=None) -> Viewport:
+    viewport = make_16_9_viewport(width, height)
+    if viewport.mode != VIEWPORT_MODE_16_9_CENTER_CROP:
+        return viewport
+
+    if frame is None:
+        return viewport
+
+    if _frame_has_letterbox_bands(frame, viewport):
+        return viewport
+
+    return make_native_viewport(width, height)
+
+
+def _frame_has_letterbox_bands(frame, viewport: Viewport) -> bool:
+    bands = []
+    if viewport.top > 0:
+        bands.append(frame[: viewport.top, :])
+    if viewport.bottom < viewport.screen_height:
+        bands.append(frame[viewport.bottom :, :])
+    if viewport.left > 0:
+        bands.append(frame[:, : viewport.left])
+    if viewport.right < viewport.screen_width:
+        bands.append(frame[:, viewport.right :])
+
+    if not bands:
+        return False
+
+    return all(_is_flat_dark_band(band) for band in bands if band.size)
+
+
+def _is_flat_dark_band(band) -> bool:
+    if band.size == 0:
+        return True
+
+    mean = float(band.mean())
+    std = float(band.std())
+    return mean <= LETTERBOX_MEAN_THRESHOLD and std <= LETTERBOX_STD_THRESHOLD

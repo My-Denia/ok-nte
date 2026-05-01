@@ -7,7 +7,9 @@ from src.tasks.BaseNTETask import BaseNTETask
 from src.utils.viewport_adapter import (
     VIEWPORT_MODE_16_9_CENTER_CROP,
     VIEWPORT_MODE_NATIVE_16_9,
+    VIEWPORT_MODE_NATIVE_SCREEN,
     make_16_9_viewport,
+    make_auto_viewport,
 )
 
 
@@ -59,6 +61,26 @@ class TestViewportAdapter(unittest.TestCase):
         active_frame = viewport.crop_active_frame(frame)
 
         self.assertEqual(active_frame.shape[:2], (1440, 2560))
+
+    def test_auto_viewport_keeps_letterboxed_16_9_area(self):
+        frame = np.zeros((1600, 2560, 3), dtype=np.uint8)
+        frame[80:1520, :] = 80
+
+        viewport = make_auto_viewport(2560, 1600, frame=frame)
+
+        self.assertEqual(viewport.mode, VIEWPORT_MODE_16_9_CENTER_CROP)
+        self.assertEqual((viewport.left, viewport.top, viewport.width, viewport.height), (0, 80, 2560, 1440))
+
+    def test_auto_viewport_uses_native_screen_when_fullscreen_edges_have_content(self):
+        frame = np.zeros((1600, 2560, 3), dtype=np.uint8)
+        frame[80:1520, :] = 80
+        frame[:80, :, 0] = np.arange(2560, dtype=np.uint8)
+        frame[1520:, :, 1] = np.arange(2560, dtype=np.uint8)
+
+        viewport = make_auto_viewport(2560, 1600, frame=frame)
+
+        self.assertEqual(viewport.mode, VIEWPORT_MODE_NATIVE_SCREEN)
+        self.assertEqual((viewport.left, viewport.top, viewport.width, viewport.height), (0, 0, 2560, 1600))
 
     def test_click_ui_uses_pixel_coordinates_without_second_ratio_mapping(self):
         task = object.__new__(BaseNTETask)
