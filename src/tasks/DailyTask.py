@@ -14,7 +14,9 @@ class DailyTask(BaseNTETask):
 
     DEFAULT_MOVE = True
     TASK_SKIPPED = object()
-    ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
+    DAILY_ACTIVITY_TAB_INDEX = 2
+    DAILY_ACTIVITY_TAB_POSITION = (0.0551, 0.3833)
+    ACTIVITY_TAB_POSITION = DAILY_ACTIVITY_TAB_POSITION
     MAX_ACTIVITY_MISSION_CLAIMS = 5
     DAILY_ACTIVITY_MISSING_FEATURES = "任务条目/前往按钮/完成状态"
     ACTIVITY_REWARD_UNAVAILABLE = "未检测到可领取活跃度奖励"
@@ -181,7 +183,8 @@ class DailyTask(BaseNTETask):
     def _open_activity_panel(self):
         """打开 F1 每日活跃度面板。"""
         self.openF1panel()
-        self.click(*self.ACTIVITY_TAB_POSITION)
+        self.info_set("每日活跃度目标栏目", f"第{self.DAILY_ACTIVITY_TAB_INDEX}栏目")
+        self.click(*self.DAILY_ACTIVITY_TAB_POSITION, after_sleep=1)
         if not self.wait_panel(Labels.f1_activity_panel):
             self.log_error("无法找到每日活跃度面板", notify=True)
             return False

@@ -171,6 +171,7 @@ config = {
     ],  # 可选. 全局单例对象, 可以存放加载的模型, 使用og.my_app调用
     "onetime_tasks": [  # 用户点击触发的任务
         ["src.tasks.DailyTask", "DailyTask"],
+        ["src.tasks.debug.DailyActivityCaptureTask", "DailyActivityCaptureTask"],
         ["src.tasks.FishingTask", "FishingTask"],
         # ["src.tasks.MyOneTimeTask", "MyOneTimeTask"],
         # ["src.tasks.MyOneTimeWithAGroup", "MyOneTimeWithAGroup"],
