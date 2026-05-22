@@ -37,14 +37,17 @@ class CharacterSwitchState:
 
 
 INST = r"""
-        <span style="color:red;">
-            <strong>站在可互动小吱的位置开始</strong>
-        </span>
-        <div style="color:white;">
+        <div style="color:#FF5555;">
+            <strong>📍 步骤起点：站在可互动小吱的位置开始</strong>
+        </div>
+        <div style="color:yellow; margin-top:4px;">
+            <strong>⚙️ 镜头设置：控制 ➔ 移动镜头修正 ➔ 禁用</strong>
+        </div>
+        <div style="color:white; margin-top:12px;">
             <strong>路径1推荐设置</strong>
-            <div style="margin-left:2em;">战斗角色: 主角 / 娜娜莉</div>
-            <div style="margin-left:2em;">跑图角色: 薄荷</div>
-            <div style="margin-left:2em;">避战角色(可选): 翳 / 浔</div>
+            <div style="margin-left:2em; margin-top:2px;">战斗角色: 主角 / 娜娜莉</div>
+            <div style="margin-left:2em; margin-top:2px;">跑图角色: 薄荷</div>
+            <div style="margin-left:2em; margin-top:2px;">避战角色(可选): 翳 / 浔</div>
         </div>
     """
 
@@ -558,7 +561,7 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
         """
         keys = list(self.config.get(self.CONF_FIGHTER, []))
         dead_keys = set(self._dead_fighter_keys)
-        keys = [item for item in reversed(keys) if item not in dead_keys]
+        keys = [item for item in keys if item not in dead_keys]
         return self._begin_character_switch(self.ROLE_FIGHTER, keys)
 
     def switch_to_runner(self):
