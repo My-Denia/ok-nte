@@ -29,7 +29,8 @@ class DarkTask(NTEOneTimeTask, BaseNTETask):
         except TaskDisabledException:
             pass
         except Exception as e:
-            self.log_error("error", e)
+            self.log_error("DarkTask error", e)
+            raise
 
     def do_run(self):
         current_time = 0
