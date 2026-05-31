@@ -8,7 +8,7 @@ from src.tasks.BaseNTETask import BaseNTETask
 from src.tasks.NTEOneTimeTask import NTEOneTimeTask
 
 
-class ShopSpecialTask(NTEOneTimeTask, BaseNTETask):
+class OwnerSelectionTask(NTEOneTimeTask, BaseNTETask):
     CONF_ROUNDS = "循环次数"
     CONF_ROB = "抢钱流"
 
@@ -31,8 +31,7 @@ class ShopSpecialTask(NTEOneTimeTask, BaseNTETask):
             "不包含任何局内的制作食物或招待客人操作。\n\n"
             "使用方法：\n"
             "1. 确保您已配置好游戏内的挂机流派。\n"
-            "2. 在咖啡店按 F 进入店长特供页面。\n"
-
+            "2. 在咖啡店按 F 进入店长特供页面。"
         )
         self.icon = FluentIcon.SYNC
         self.default_config.update({self.CONF_ROUNDS: 1, self.CONF_ROB: True})
