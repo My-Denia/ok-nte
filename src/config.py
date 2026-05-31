@@ -173,7 +173,7 @@ config = {
         ["src.tasks.FishingTask", "FishingTask"],
         ["src.tasks.AnomalyTask", "AnomalyTask"],
         ["src.tasks.RhythmTask", "RhythmTask"],
-        # ["src.tasks.ShopSpecialTask", "ShopSpecialTask"],
+        ["src.tasks.ShopSpecialTask", "ShopSpecialTask"],
         ["src.tasks.AutoHeistTask", "AutoHeistTask"],
         ["src.tasks.DarkTask", "DarkTask"],
         # ["src.tasks.MyOneTimeWithAGroup", "MyOneTimeWithAGroup"],
