@@ -458,10 +458,13 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
         self.log_round_info("出现异常，将退出粉爪副本")
         self.info_add("失败次数", 1)
 
+        def find_popup():
+            self.ocr(0.45, 0.30, 0.55, 0.40, match=re.compile("确认退出"))
+
         self.wait_until(
             lambda: (
                 self.is_in_team_outside_heist()
-                or self.ocr(0.45, 0.30, 0.55, 0.40, match=re.compile("确认退出"))
+                or find_popup()
             ),
             pre_action=lambda: self.send_key("esc", action_name="quit_heist", interval=2),
             time_out=60,
@@ -475,7 +478,7 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
             0.50, 0.60, 0.70, 0.70, match=re.compile("确认"), time_out=60, raise_if_not_found=True
         )
         self.wait_until(
-            lambda: not self.ocr(0.45, 0.30, 0.55, 0.40, match=re.compile("确认退出")),
+            lambda: not find_popup(),
             pre_action=lambda: self.operate_click(btn, action_name="quit_heist", interval=1),
             time_out=60,
             raise_if_not_found=True,
