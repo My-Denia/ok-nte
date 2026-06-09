@@ -548,9 +548,9 @@ class BaseChar:
             return False
 
         if self.ultimate_available():
-            if self.task._combat_settle.time is not None:
-                self.logger.info("click_ultimate blocked by combat_detect_settle")
-            while self.task._combat_settle.time is not None:
+            if self.task.combat_detect_uncertain:
+                self.logger.info("click_ultimate blocked by combat_detect_uncertain")
+            while self.task.combat_detect_uncertain:
                 self.task.next_frame()
                 self.check_combat()
                 self.click_with_interval()
