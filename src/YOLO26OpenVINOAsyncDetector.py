@@ -1,10 +1,9 @@
 import time
 
 import numpy as np
+from ok import Box
 from openvino import AsyncInferQueue, Core, Layout, PartialShape, Type
 from openvino.preprocess import ColorFormat, PrePostProcessor, ResizeAlgorithm
-
-from ok import Box
 
 
 class YOLO26OpenVINOAsyncDetector:
@@ -46,6 +45,7 @@ class YOLO26OpenVINOAsyncDetector:
 
         # 内部状态
         self.latest_results = None
+        self.latest_image = None
         self.class_names = ["target"]  # 可根据 data.yaml 修改
         self.latency = 0.0  # 单次推理总耗时 (秒)
         self.job_id = 0
@@ -104,6 +104,7 @@ class YOLO26OpenVINOAsyncDetector:
             )
 
         self.latest_results = tmp_results
+        self.latest_image = user_data.get("image")
 
     def detect(
         self,
@@ -186,6 +187,7 @@ class YOLO26OpenVINOAsyncDetector:
                     "pad_y": pad_y,
                     "target_w": target_w,  # 记录画布的总宽用于还原缩放
                     "job_id": current_job_id,
+                    "image": image,
                 },
             )
 
@@ -232,4 +234,5 @@ class YOLO26OpenVINOAsyncDetector:
     def clear_cache(self):
         """清空缓存"""
         self.latest_results = None
+        self.latest_image = None
         self.job_id += 1  # 增加 epoch，所有正在运行的旧任务的回调都会失效

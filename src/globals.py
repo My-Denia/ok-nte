@@ -170,6 +170,10 @@ class Globals(QObject):
     def openvino_latency_async(self):
         return self._openvino_model_async.latency
 
+    @property
+    def openvino_latest_image(self):
+        return self._openvino_model_async.latest_image if self._openvino_model_async else None
+
     def openvino_detect(
         self, image, sync=False, box=None, threshold=0.5, force=False, mask_regions=None
     ):

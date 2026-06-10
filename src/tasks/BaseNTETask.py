@@ -115,6 +115,11 @@ class BaseNTETask(CharUIMixin, BaseTask):
             return
         og.my_app.openvino_clear_cache()
 
+    def get_last_openvino_image(self):
+        if og.my_app is None:
+            return None
+        return getattr(og.my_app, 'openvino_latest_image', None)
+
     @property
     def main_viewport(self):
         return self.box_of_screen(0.0984, 0.1042, 0.8961, 0.8944, name="main_viewport")

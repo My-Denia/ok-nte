@@ -132,11 +132,10 @@ class CombatCheck(BaseNTETask):
             deadline = time.time() + self.target_enemy_time_out
             while time.time() < deadline:
                 if self.is_in_team():
+                    if self.combat_detect(lv=lv, force=True):
+                        return True
                     self.middle_click()
                     self.sleep(0.3)
-                    self.next_frame()
-                    if self.combat_detect(lv=lv):
-                        return True
                 self.next_frame()
 
     def has_health_bar(self):
@@ -342,47 +341,59 @@ class CombatCheck(BaseNTETask):
                 self._in_combat = self.load_chars()
                 return self._in_combat
 
-    def combat_detect(self, frame=None, target=True, lv=True):
+    def combat_detect(self, frame=None, target=True, lv=True, force=False):
         if lv and self.find_lv(frame=frame):
             return True
-        if target and self.find_target(frame=frame, sync=True):
+        if target and self.find_target(frame=frame, sync=True, force=force):
             return True
         return False
 
     def find_target(self, sync=False, frame=None, force=False) -> Box | None | bool:
-        if frame is None:
-            frame = self.frame
         result = self.openvino_detect(
-            frame=frame, sync=sync, force=force, mask_regions=self._TARGET_MASK_REGIONS
+            frame=frame,
+            sync=sync,
+            threshold=0.65,
+            force=force,
+            mask_regions=self._TARGET_MASK_REGIONS,
         )
 
         if result is None:
             return None
 
-        target = False
         if result:
-            target = max(result, key=lambda x: x.confidence)
-        if isinstance(target, Box):
-            cropped = target.crop_frame(frame)
-            # 使用自适应亮度二值化提取可能的亮色 UI 标记
-            mask = iu.binarize_bgr_by_adaptive_brightness(cropped, offset=20, to_bgr=False)
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            max_conf = max(result, key=lambda x: x.confidence)
+            if max_conf.confidence > 0.8:
+                return max_conf
 
-            is_valid = False
-            if contours:
-                cnt = max(contours, key=cv2.contourArea)
-                area = cv2.contourArea(cnt)
-                if area >= 10:  # 过滤极小的噪点
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    aspect_ratio = w / float(max(h, 1))
-                    extent = area / float(max(w * h, 1))
+        target = False
+        for box in result:
+            if isinstance(box, Box):
+                detect_frame = self.get_last_openvino_image()
+                if detect_frame is None:
+                    return result
 
-                    # 正菱形的宽高比应接近 1，面积填充率应接近 0.5
-                    if 0.75 < aspect_ratio < 1.33 and 0.35 < extent < 0.65:
-                        is_valid = True
-            if not is_valid:
-                self.log_info("find_target cause contour analysis failed")
-                target = is_valid
+                cropped = box.crop_frame(detect_frame)
+                # 使用自适应亮度二值化提取可能的亮色 UI 标记
+                mask = iu.binarize_bgr_by_adaptive_brightness(cropped, offset=20, to_bgr=False)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                is_valid = False
+                if contours:
+                    cnt = max(contours, key=cv2.contourArea)
+                    area = cv2.contourArea(cnt)
+                    if area >= 10:  # 过滤极小的噪点
+                        x, y, w, h = cv2.boundingRect(cnt)
+                        aspect_ratio = w / float(max(h, 1))
+                        extent = area / float(max(w * h, 1))
+
+                        # 正菱形的宽高比应接近 1，面积填充率应接近 0.5
+                        if 0.75 < aspect_ratio < 1.33 and 0.35 < extent < 0.65:
+                            is_valid = True
+                if not is_valid:
+                    self.log_info("find_target cause contour analysis failed")
+                    target = is_valid
+                else:
+                    target = box
 
         return target
 
