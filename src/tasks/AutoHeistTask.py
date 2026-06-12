@@ -976,14 +976,18 @@ class AutoHeistTask(NTEOneTimeTask, BaseCombatTask):
             if direction is not None:
                 self.send_key_up(direction)
                 self.sleep(0.30)
-            ret = self.wait_until(
-                self.has_extract_panel,
+            if self.wait_until(
+                lambda: not self.is_in_team(),
                 pre_action=lambda: self.send_key("f", interval=2),
                 time_out=1.75,
-            )
-            if ret:
-                self.sleep(0.30)
-                self.ensure_in_team()
+            ):
+                ret = self.wait_until(
+                    self.has_extract_panel,
+                    time_out=1.75,
+                )
+                if ret:
+                    self.sleep(0.30)
+                    self.ensure_in_team()
             return ret
         else:
             raise AbortException("not found exit interaction")
