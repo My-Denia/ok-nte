@@ -197,7 +197,8 @@ config = {
         ["src.tasks.trigger.AutoLoginTask", "AutoLoginTask"],
     ],
     "custom_tabs": [
-        ["src.ui.CharHubTab", "CharHubTab"]
+        ["src.ui.CharHubTab", "CharHubTab"],
+        ["src.ui.MidiPlayerTab", "MidiPlayerTab"]
         # ['src.ui.MyTab', 'MyTab'], #可选, 自定义UI, 显示在侧边栏
     ],
     "scene": ["src.scene.NTEScene", "NTEScene"],
