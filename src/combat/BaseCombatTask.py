@@ -411,7 +411,7 @@ class BaseCombatTask(CombatCheck):
         try:
             while self.in_combat():
                 logger.debug(f"combat_once loop {self.chars}")
-                self.get_current_char().perform()
+                self.get_current_char(raise_exception=True).perform()
         except CharDeadException as e:
             raise e
         except NotInCombatException as e:
@@ -836,10 +836,12 @@ class BaseCombatTask(CombatCheck):
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
-        if self._in_combat and not self.in_combat():
-            # if self.debug:
-            #     self.screenshot('not_in_combat_calling_check_combat')
-            self.raise_not_in_combat("combat check not in combat")
+        if self._in_combat:
+            self.next_frame()
+            if not self.in_combat():
+                # if self.debug:
+                #     self.screenshot('not_in_combat_calling_check_combat')
+                self.raise_not_in_combat("combat check not in combat")
 
     def set_key(self, key, box):
         best = self.find_best_match_in_box(box, ["t", "e", "r", "q"], threshold=0.7)
